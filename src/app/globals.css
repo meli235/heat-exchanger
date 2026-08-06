@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --primary-blue: #0284C7;
+  --secondary-cyan: #0EA5E9;
+  --hot-fluid-orange: #F97316;
+  --hot-fluid-red: #EF4444;
+  --cold-fluid-cyan: #06B6D4;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Asklepios Light Theme Cards */
+.asklepios-card {
+  background: #FFFFFF;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px -2px rgba(148, 163, 184, 0.1), 0 2px 6px -1px rgba(148, 163, 184, 0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.asklepios-card:hover {
+  box-shadow: 0 10px 25px -3px rgba(148, 163, 184, 0.15), 0 4px 10px -2px rgba(148, 163, 184, 0.08);
+}
+
+.asklepios-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Flow Animations */
+@keyframes flowDash {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+.animate-flow-hot {
+  stroke-dasharray: 8 8;
+  animation: flowDash 1s linear infinite;
+}
+
+.animate-flow-cold {
+  stroke-dasharray: 8 8;
+  animation: flowDash 1.2s linear infinite reverse;
+}
+
+.animate-flow-cold-reverse {
+  stroke-dasharray: 8 8;
+  animation: flowDash 1.2s linear infinite reverse;
+}
+
+.animate-flow-cold-forward {
+  stroke-dasharray: 8 8;
+  animation: flowDash 1.2s linear infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.15);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* Custom Range Slider */
+input[type="range"] {
+  accent-color: #0284C7;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0284C7;
+  border: 3px solid #FFFFFF;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Print styles for PDF / Report Generation */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
