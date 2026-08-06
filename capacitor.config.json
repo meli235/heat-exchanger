@@ -1,0 +1,8 @@
+{
+  "appId": "com.heatexchanger.app",
+  "appName": "Heat Exchanger",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  }
+}
