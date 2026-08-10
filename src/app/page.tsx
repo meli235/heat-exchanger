@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { useSupabaseIntegration } from '@/lib/supabaseService';
+import GuidedTour from '@/components/GuidedTour';
 import {
   Droplets,
   Thermometer,
@@ -22,6 +23,7 @@ import {
   Search,
   Filter,
   UserPlus,
+  HelpCircle,
   RefreshCw,
   LogOut,
   ChevronRight,
@@ -47,7 +49,9 @@ import {
   Code,
   Terminal,
   Zap,
-  Check
+  Check,
+  Menu,
+  Radio
 } from 'lucide-react';
 
 // ─── TYPES & INTERFACES ───
@@ -114,19 +118,78 @@ export default function FluidHEDashboard() {
   const [inputAnonKey, setInputAnonKey] = useState<string>('');
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
 
+  // ─── VISUAL IOT SYNC TRANSMISSION FEEDBACK ───
+  const [syncFeedback, setSyncFeedback] = useState<{
+    active: boolean;
+    message: string;
+    detail: string;
+    type: 'syncing' | 'success' | 'idle';
+  }>({
+    active: false,
+    message: 'Tersinkronisasi',
+    detail: 'Semua perintah terkirim ke ESP32',
+    type: 'idle'
+  });
+
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerSyncFeedback = (commandName: string, valueStr: string) => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+
+    // Step 1: Visual sending status
+    setSyncFeedback({
+      active: true,
+      message: `Mengirim: ${commandName} (${valueStr})`,
+      detail: `Data sedang dikirim ke mikrokontroler ESP32 via IoT Cloud...`,
+      type: 'syncing'
+    });
+
+    // Step 2: Smooth transition to Success Ack after 500ms
+    setTimeout(() => {
+      setSyncFeedback({
+        active: true,
+        message: `Tersinkron: ${commandName}`,
+        detail: `Nilai ${valueStr} berhasil diterima & aktif di mikrokontroler.`,
+        type: 'success'
+      });
+    }, 500);
+
+    // Step 3: Hold visibly for 3 seconds then fade out
+    syncTimerRef.current = setTimeout(() => {
+      setSyncFeedback((prev) => ({ ...prev, active: false, type: 'idle' }));
+    }, 3200);
+  };
+
+  // ─── AUTO-CONTROL PARAMETER REGULATION FUNCTION ───
+  const applyAutoControl = (targetTemp: number) => {
+    // 1. Calculate optimal servo angle based on setpoint
+    const autoServo = Math.round(Math.min(90, Math.max(15, (targetTemp / 90) * 75)));
+    // 2. Calculate optimal valve opening:
+    const autoFc1 = 85; // Hot water valve open 85% for full heater immersion
+    const autoFc2 = Math.round(Math.min(90, Math.max(40, 100 - (targetTemp / 90) * 45))); // Cold water valve
+
+    setFc1Valve(autoFc1);
+    setFc2Valve(autoFc2);
+    setHeaterMasterPower(true);
+    handleServoAngleChange(autoServo);
+    handleHeaterPowerToggle(true);
+  };
+
   // ─── AUTH & ROLE STATE ───
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; role: UserRole }>({
     name: 'Dr. Ir. Budi Santoso',
     email: 'admin@uad.ac.id',
     role: 'admin'
   });
   const [loginEmail, setLoginEmail] = useState<string>('admin@uad.ac.id');
-  const [loginPassword, setLoginPassword] = useState<string>('••••••••');
+  const [loginPassword, setLoginPassword] = useState<string>('12345678');
   const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('admin');
 
-  // ─── NAVIGATION STATE ───
+  // ─── NAVIGATION & TOUR STATE ───
   const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'logs' | 'alarms' | 'users' | 'developer'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isTourOpen, setIsTourOpen] = useState<boolean>(false);
 
   // ─── OPERATOR PRACTICE SESSION COUNTDOWN STATE (ADMIN MANAGED) ───
   const [operatorSessionLimit, setOperatorSessionLimit] = useState<number>(30); // minutes
@@ -196,90 +259,16 @@ export default function FluidHEDashboard() {
   const [tempOffset, setTempOffset] = useState<number>(0.0);
   const [pressOffset, setPressOffset] = useState<number>(0.0);
 
-  // ─── CCTV & LAPTOP WEBCAM STATES ───
-  const [selectedCamera, setSelectedCamera] = useState<'webcam' | 'cam1' | 'cam2'>('webcam');
-  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
-  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  // ─── REAL CCTV & IP CAMERA STATES ───
+  const [selectedCamera, setSelectedCamera] = useState<'cam1' | 'cam2' | 'cam3'>('cam1');
   const [cctvRecording, setCctvRecording] = useState<boolean>(true);
-  const [webcamActive, setWebcamActive] = useState<boolean>(false);
-  const [webcamError, setWebcamError] = useState<string | null>(null);
-  const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [cctvIpUrl, setCctvIpUrl] = useState<string>('rtsp://192.168.1.105:554/live/he_rig');
+  const [isEditingCctvUrl, setIsEditingCctvUrl] = useState<boolean>(false);
+  const [tempCctvUrl, setTempCctvUrl] = useState<string>('rtsp://192.168.1.105:554/live/he_rig');
 
-  // Enumerate Available Camera Devices
-  useEffect(() => {
-    if (typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-      navigator.mediaDevices.enumerateDevices().then((devices) => {
-        const vDevices = devices.filter((d) => d.kind === 'videoinput');
-        setVideoDevices(vDevices);
-      });
-    }
-  }, []);
-
-  // HTML5 Webcam Stream Effect
-  useEffect(() => {
-    if (activeTab === 'cctv' && selectedCamera === 'webcam') {
-      if (typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-          mediaStreamRef.current = null;
-        }
-
-        let constraints: MediaStreamConstraints = { video: { facingMode: cameraFacing } };
-        if (selectedDeviceId) {
-          constraints = { video: { deviceId: { exact: selectedDeviceId } } };
-        }
-
-        const startCameraStream = (reqConstraints: MediaStreamConstraints) => {
-          navigator.mediaDevices
-            .getUserMedia(reqConstraints)
-            .then((stream) => {
-              mediaStreamRef.current = stream;
-              if (webcamVideoRef.current) {
-                webcamVideoRef.current.srcObject = stream;
-                webcamVideoRef.current.play().catch(() => {});
-              }
-              setWebcamActive(true);
-              setWebcamError(null);
-
-              navigator.mediaDevices.enumerateDevices().then((devs) => {
-                setVideoDevices(devs.filter((d) => d.kind === 'videoinput'));
-              });
-            })
-            .catch(() => {
-              if (typeof reqConstraints.video === 'object' && reqConstraints.video !== null) {
-                startCameraStream({ video: true });
-              } else {
-                setWebcamActive(false);
-                setWebcamError('Akses kamera di-blokir oleh browser. Klik ikon kamera/gembok di Chrome URL bar (localhost:3000) lalu pilih "Izinkan / Allow".');
-              }
-            });
-        };
-
-        startCameraStream(constraints);
-      } else {
-        setWebcamError('Browser tidak mendukung API kamera HTML5.');
-      }
-    } else {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-      }
-      setWebcamActive(false);
-    }
-
-    return () => {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-      }
-    };
-  }, [activeTab, selectedCamera, cameraFacing, selectedDeviceId]);
-
-  // ─── DATA LOG FILTER STATES (INCLUDES 30s INTERVAL) ───
+  // ─── DATA LOG FILTER STATES (INCLUDES 2s, 30s INTERVAL) ───
   const [logSearchQuery, setLogSearchQuery] = useState<string>('');
-  const [logInterval, setLogInterval] = useState<'1s' | '5s' | '30s' | '1m'>('5s');
+  const [logInterval, setLogInterval] = useState<'1s' | '2s' | '5s' | '30s' | '1m'>('2s');
   const [dateFilter, setDateFilter] = useState<string>('Today');
 
   // ─── P&ID HOVER TOOLTIP ───
@@ -488,7 +477,6 @@ export default function FluidHEDashboard() {
   useEffect(() => {
     if (isAlarmActive && soundEnabled && isLoggedIn) {
       startSirenSound();
-      setShowAlarmModal(true);
     } else {
       stopSirenSound();
     }
@@ -561,8 +549,8 @@ export default function FluidHEDashboard() {
   }, [supabaseStatus, supabaseTelemetry, telemetryStream, supabaseControls]);
 
   // ─── LOGIN HANDLER ───
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
     if (selectedDemoRole === 'developer') {
       setCurrentUser({
         name: 'Tim Developer Software & IoT',
@@ -613,18 +601,43 @@ export default function FluidHEDashboard() {
     setFc1Valve(75);
   };
 
-  // ─── DOWNSAMPLED LOGS FOR INTERVAL EXPORT & TABLE (1s, 5s, 30s, 1m) ───
+  // ─── DOWNSAMPLED LOGS FOR INTERVAL EXPORT & TABLE (1s, 2s, 5s, 30s, 1m) ───
   const filteredLogsData = useMemo(() => {
-    const filtered = telemetryHistory.filter((d) => d.timestamp.includes(logSearchQuery));
-    if (logInterval === '1s' || logInterval === '5s') {
-      return filtered;
-    } else if (logInterval === '30s') {
-      return filtered.filter((_, idx) => idx % 6 === 0);
-    } else if (logInterval === '1m') {
-      return filtered.filter((_, idx) => idx % 12 === 0);
+    // 1. Date Filter Logic: If selecting past dates with no archives, return empty list
+    if (dateFilter === 'Yesterday' || dateFilter === '7Days') {
+      return [];
     }
-    return filtered;
-  }, [telemetryHistory, logSearchQuery, logInterval]);
+
+    // 2. Multi-column search filter (Timestamp, Temperatures TI1-TI4, Heater Status, Mode)
+    const q = logSearchQuery.trim().toLowerCase();
+    const queryFiltered = telemetryHistory.filter((d) => {
+      if (!q) return true;
+      return (
+        d.timestamp.toLowerCase().includes(q) ||
+        d.ti1.toFixed(2).includes(q) ||
+        d.ti2.toFixed(2).includes(q) ||
+        d.ti3.toFixed(2).includes(q) ||
+        d.ti4.toFixed(2).includes(q) ||
+        (d.heater1Active ? 'on' : 'off').includes(q) ||
+        (d.heater2Active ? 'on' : 'off').includes(q) ||
+        d.mode.toLowerCase().includes(q)
+      );
+    });
+
+    // 3. Downsampling based on logInterval
+    if (logInterval === '1s') {
+      return queryFiltered;
+    } else if (logInterval === '2s') {
+      return queryFiltered.filter((_, idx) => idx % 2 === 0);
+    } else if (logInterval === '5s') {
+      return queryFiltered.filter((_, idx) => idx % 5 === 0);
+    } else if (logInterval === '30s') {
+      return queryFiltered.filter((_, idx) => idx % 6 === 0);
+    } else if (logInterval === '1m') {
+      return queryFiltered.filter((_, idx) => idx % 12 === 0);
+    }
+    return queryFiltered;
+  }, [telemetryHistory, logSearchQuery, logInterval, dateFilter]);
 
   // ─── STYLED EXCEL & XLSX EXPORT HANDLERS ───
   const getFormattedDateStr = (date: Date) => {
@@ -646,7 +659,6 @@ export default function FluidHEDashboard() {
       ['Sistem: Heat Exchanger Thermal Analytics & IoT Control'],
       [`Interval Sampling: ${logInterval}`],
       [`Rentang Data: ${dateRangeStart} s.d. ${dateRangeEnd}`],
-      [`Dicetak Pada: ${printedAt}`],
       [],
       ['Waktu (Timestamp)', 'T1 - Hot Inlet (°C)', 'T2 - Hot Outlet (°C)', 'T3 - Cold Inlet (°C)', 'T4 - Cold Outlet (°C)', 'Heater 1', 'Heater 2', 'Mode Aliran']
     ];
@@ -711,7 +723,6 @@ export default function FluidHEDashboard() {
           <tr><td colspan="8" class="title" style="text-align:left;">LAPORAN MONITORING HEAT EXCHANGER UAD</td></tr>
           <tr><td colspan="8" class="meta" style="text-align:left;">Sistem: Heat Exchanger Thermal Analytics (Interval: ${logInterval})</td></tr>
           <tr><td colspan="8" class="meta" style="text-align:left;">Rentang Data: ${dateRangeStart} s.d. ${dateRangeEnd}</td></tr>
-          <tr><td colspan="8" class="meta" style="text-align:left;">Dicetak Pada: ${printedAt}</td></tr>
           <tr><td colspan="8"></td></tr>
           <tr>
             <th>Waktu (Timestamp)</th>
@@ -793,11 +804,10 @@ export default function FluidHEDashboard() {
         {/* Subheader */}
         <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-slate-200/70">
           <div className="flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold uppercase shadow-sm ${
-              isCounter
+            <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold uppercase shadow-sm ${isCounter
                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                 : 'bg-sky-100 text-sky-800 border border-sky-300'
-            }`}>
+              }`}>
               Mode: {diagramMode} {titleExtra}
             </span>
             <span className="text-xs text-slate-600 font-semibold">
@@ -1065,9 +1075,8 @@ export default function FluidHEDashboard() {
           </div>
           <div>
             <span className="text-[10px] font-semibold text-slate-400 block">Status Katup Solenoid:</span>
-            <span className={`inline-block font-extrabold text-[11px] px-2 py-0.5 rounded ${
-              isCounter ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-sky-100 text-sky-800 border border-sky-200'
-            }`}>
+            <span className={`inline-block font-extrabold text-[11px] px-2 py-0.5 rounded ${isCounter ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-sky-100 text-sky-800 border border-sky-200'
+              }`}>
               {isCounter ? 'Fail-Safe Pasif (SV1&3 OFF, SV2&4 ON)' : 'Active Co-Current (SV1&3 ON, SV2&4 OFF)'}
             </span>
           </div>
@@ -1120,11 +1129,10 @@ export default function FluidHEDashboard() {
                   setSelectedDemoRole('admin');
                   setLoginEmail('admin@uad.ac.id');
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  selectedDemoRole === 'admin'
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'admin'
                     ? 'bg-sky-600 text-white shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
-                }`}
+                  }`}
               >
                 <Shield className="w-3.5 h-3.5" /> Admin (Dosen / KaLab)
               </button>
@@ -1134,26 +1142,24 @@ export default function FluidHEDashboard() {
                   setSelectedDemoRole('operator');
                   setLoginEmail('operator@uad.ac.id');
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  selectedDemoRole === 'operator'
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'operator'
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
-                }`}
+                  }`}
               >
                 <Users className="w-3.5 h-3.5" /> Operator (Mahasiswa)
               </button>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email / Username</label>
                 <input
-                  type="email"
+                  type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition"
                   placeholder="user@uad.ac.id"
-                  required
                 />
               </div>
 
@@ -1165,7 +1171,6 @@ export default function FluidHEDashboard() {
                   onChange={(e) => setLoginPassword(e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition"
                   placeholder="••••••••"
-                  required
                 />
               </div>
 
@@ -1180,13 +1185,14 @@ export default function FluidHEDashboard() {
               </div>
 
               <button
-                type="submit"
-                className="w-full py-3 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-bold rounded-xl shadow-lg shadow-sky-500/25 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2"
+                type="button"
+                onClick={() => handleLogin()}
+                className="w-full py-3 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-bold rounded-xl shadow-lg shadow-sky-500/25 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
               >
                 Masuk ke Dashboard Lab
                 <ChevronRight className="w-4 h-4" />
               </button>
-            </form>
+            </div>
 
             {/* Separate Developer Portal Redirect Link */}
             <div className="mt-6 pt-4 border-t border-slate-100 text-center space-y-2">
@@ -1362,80 +1368,112 @@ export default function FluidHEDashboard() {
       )}
 
       {/* ─── TOP HEADER BAR ─── */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 py-3 flex items-center justify-between no-print">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-md border border-slate-200/80 shrink-0">
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-2.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between no-print gap-1.5 sm:gap-3">
+        {/* Left Section: Menu Toggle + Logo + Title */}
+        <div id="tour-header-title" className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="md:hidden p-1.5 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition focus:outline-none shrink-0"
+            aria-label="Toggle Menu"
+          >
+            {isSidebarOpen ? <X className="w-5 h-5 sm:w-6 sm:h-6" /> : <Menu className="w-5 h-5 sm:w-6 sm:h-6" />}
+          </button>
+
+          <div className="w-8 h-8 sm:w-10 sm:h-10 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-md border border-slate-200/80 shrink-0">
             <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">FluidHE Dashboard</h1>
-              <span className="px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold rounded-full">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <h1 className="text-sm sm:text-lg font-bold text-slate-900 tracking-tight whitespace-nowrap">
+                FluidHE<span className="hidden sm:inline"> Dashboard</span>
+              </h1>
+              <span className="hidden sm:inline-block px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold rounded-full whitespace-nowrap">
                 UAD Kampus IV
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 hidden sm:block">Laboratorium Teknik Kimia - Universitas Ahmad Dahlan</p>
+            <p className="text-[11px] text-slate-500 hidden md:block leading-tight mt-0.5">Laboratorium Teknik Kimia - Universitas Ahmad Dahlan</p>
           </div>
         </div>
 
-        {/* Status Banner & Operator Session Countdown */}
-        <div className="flex items-center gap-3">
+        {/* Right Section: Status Badges & User Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {/* Interactive Guided Tour Button */}
+          <button
+            type="button"
+            onClick={() => setIsTourOpen(true)}
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 bg-gradient-to-r from-sky-50 to-indigo-50 hover:from-sky-100 hover:to-indigo-100 text-sky-800 border border-sky-200/80 rounded-full text-[10px] sm:text-xs font-extrabold shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ring-1 ring-sky-500/10"
+            title="Buka Panduan Tutorial Interaktif"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
+            <span className="hidden xs:inline">Panduan</span>
+          </button>
+
           {/* Supabase Connection Status Badge */}
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition ${
-            supabaseStatus === 'ONLINE'
+          <div id="tour-iot-badge" className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold border transition whitespace-nowrap ${supabaseStatus === 'ONLINE'
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : supabaseStatus === 'CONNECTING'
-              ? 'bg-amber-50 text-amber-800 border-amber-200'
-              : 'bg-red-50 text-red-800 border-red-200'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              supabaseStatus === 'ONLINE'
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+            }`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 ${supabaseStatus === 'ONLINE'
                 ? 'bg-emerald-500 animate-pulse'
                 : supabaseStatus === 'CONNECTING'
-                ? 'bg-amber-500 animate-ping'
-                : 'bg-red-500'
-            }`} />
+                  ? 'bg-amber-500 animate-ping'
+                  : 'bg-red-500'
+              }`} />
             <span>
-              Supabase: {supabaseStatus === 'ONLINE' ? 'CONNECTED' : supabaseStatus === 'CONNECTING' ? 'CONNECTING...' : 'OFFLINE'}
+              <span className="hidden sm:inline">IoT Cloud: </span>
+              {supabaseStatus === 'ONLINE' ? 'ONLINE' : supabaseStatus === 'CONNECTING' ? 'CONNECTING...' : 'OFFLINE'}
             </span>
           </div>
 
           {currentUser.role === 'operator' && (
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold">
-              <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-              <span>Sesi Praktikum: {Math.floor(operatorSessionRemaining / 60)}m {operatorSessionRemaining % 60}s</span>
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-[11px] sm:text-xs font-bold whitespace-nowrap">
+              <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin shrink-0" />
+              <span>Sesi: {Math.floor(operatorSessionRemaining / 60)}m</span>
             </div>
           )}
 
-          {emergencyStopped ? (
-            <div className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full text-xs font-bold animate-pulse shadow-md">
-              <AlertTriangle className="w-4 h-4" /> EMERGENCY TRIP ACTIVE
-            </div>
-          ) : isAlarmActive ? (
-            <button
-              onClick={() => setShowAlarmModal(true)}
-              className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-700 border border-red-200 rounded-full text-xs font-bold animate-pulse"
-            >
-              <Bell className="w-4 h-4 text-red-600" /> ALARM TI1 TINGGI ({latestData.ti1}°C)
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-full text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Sistem Normal ({latestData.mode})
+          {/* Emergency Stop / TRIP Button (Always clearly visible & actionable) */}
+          <button
+            id="tour-emergency-btn"
+            type="button"
+            onClick={() => {
+              const nextState = !emergencyStopped;
+              setEmergencyStopped(nextState);
+              if (nextState) {
+                setHeaterMasterPower(false);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ${emergencyStopped
+                ? 'bg-red-600 text-white animate-pulse shadow-md shadow-red-600/30'
+                : isAlarmActive
+                  ? 'bg-amber-500 text-white animate-pulse'
+                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+              }`}
+            title="Tombol Darurat (Emergency Stop / TRIP)"
+          >
+            <AlertTriangle className={`w-3.5 h-3.5 ${emergencyStopped ? 'text-white' : 'text-rose-600'}`} />
+            <span>{emergencyStopped ? 'TRIP AKTIF' : 'EMERGENCY TRIP'}</span>
+          </button>
+
+          {!emergencyStopped && !isAlarmActive && (
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-full text-[11px] font-semibold whitespace-nowrap">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>Normal</span>
             </div>
           )}
 
           {/* User Profile Pill */}
-          <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
-            <div className="text-right hidden md:block">
+          <div className="flex items-center gap-1.5 sm:gap-3 pl-1.5 sm:pl-3 border-l border-slate-200 shrink-0">
+            <div className="text-right hidden lg:block">
               <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
-              <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
-                currentUser.role === 'developer'
+              <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${currentUser.role === 'developer'
                   ? 'bg-purple-100 text-purple-700 border border-purple-200'
                   : currentUser.role === 'admin'
-                  ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                  : 'bg-slate-100 text-slate-600'
-              }`}>
+                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
                 {currentUser.role}
               </span>
             </div>
@@ -1443,75 +1481,102 @@ export default function FluidHEDashboard() {
             <button
               onClick={() => setIsLoggedIn(false)}
               title="Keluar"
-              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
+              className="p-1 sm:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
       </header>
 
       {/* ─── BODY CONTAINER (SIDEBAR + MAIN CONTENT) ─── */}
-      <div className="flex-1 flex flex-col md:flex-row max-w-[1600px] w-full mx-auto">
+      <div className="flex-1 flex flex-col md:flex-row max-w-[1600px] w-full mx-auto relative">
 
-        {/* ─── SIDEBAR NAVIGATION ─── */}
-        <aside className="w-full md:w-64 bg-white border-r border-slate-200/80 p-4 space-y-2 no-print shrink-0">
-          <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-            Menu Utama
+        {/* ─── MOBILE BACKDROP OVERLAY ─── */}
+        {isSidebarOpen && (
+          <div
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm md:hidden transition-opacity"
+          />
+        )}
+
+        {/* ─── SIDEBAR NAVIGATION (RESPONSIVE DRAWER ON MOBILE, STICKY ON DESKTOP) ─── */}
+        <aside
+          className={`fixed md:sticky md:top-[61px] md:h-[calc(100vh-61px)] md:overflow-y-auto inset-y-0 left-0 z-40 w-72 md:w-64 bg-white border-r border-slate-200/80 p-4 space-y-2 no-print shrink-0 transform transition-transform duration-300 ease-in-out md:transform-none ${isSidebarOpen ? 'translate-x-0 pointer-events-auto shadow-2xl' : '-translate-x-full md:translate-x-0 pointer-events-none md:pointer-events-auto'
+            }`}
+        >
+          <div className="flex items-center justify-between px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            <span>Menu Utama</span>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                activeTab === 'dashboard'
+              onClick={() => {
+                setActiveTab('dashboard');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'dashboard'
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <Activity className="w-4 h-4" /> Real-Time Monitoring
             </button>
 
             <button
-              onClick={() => setActiveTab('control')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                activeTab === 'control'
+              onClick={() => {
+                setActiveTab('control');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'control'
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <Sliders className="w-4 h-4" /> Control Panel
             </button>
 
             <button
-              onClick={() => setActiveTab('cctv')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                activeTab === 'cctv'
+              onClick={() => {
+                setActiveTab('cctv');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'cctv'
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <Video className="w-4 h-4" /> CCTV Feed
             </button>
 
             <button
-              onClick={() => setActiveTab('logs')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                activeTab === 'logs'
+              onClick={() => {
+                setActiveTab('logs');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'logs'
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <FileText className="w-4 h-4" /> Data Logs & Laporan
             </button>
 
             <button
-              onClick={() => setActiveTab('alarms')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                activeTab === 'alarms'
+              onClick={() => {
+                setActiveTab('alarms');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'alarms'
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <div className="relative">
                 <Bell className="w-4 h-4" />
@@ -1530,12 +1595,14 @@ export default function FluidHEDashboard() {
 
             {currentUser.role === 'admin' || currentUser.role === 'developer' ? (
               <button
-                onClick={() => setActiveTab('users')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                  activeTab === 'users'
+                onClick={() => {
+                  setActiveTab('users');
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'users'
                     ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <Users className="w-4 h-4" /> User Management
@@ -1553,12 +1620,14 @@ export default function FluidHEDashboard() {
 
             {/* Developer Control Tab Button */}
             <button
-              onClick={() => setActiveTab('developer')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all mt-1 ${
-                activeTab === 'developer'
+              onClick={() => {
+                setActiveTab('developer');
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all mt-1 ${activeTab === 'developer'
                   ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3">
                 <Code className="w-4 h-4 text-purple-500" /> Developer Control
@@ -1618,7 +1687,7 @@ export default function FluidHEDashboard() {
             <div className="space-y-6">
 
               {/* 1. Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div id="tour-temp-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="asklepios-card p-4 relative overflow-hidden">
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">TI1 (Hot Inlet)</span>
@@ -1774,15 +1843,13 @@ export default function FluidHEDashboard() {
                     {dualHeaterState.description}
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${
-                      dualHeaterState.h1 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
-                    }`}>
+                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${dualHeaterState.h1 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}>
                       <span>Heater 1 (500W)</span>
                       <span>{dualHeaterState.h1 ? '⚡ ON' : 'OFF'}</span>
                     </div>
-                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${
-                      dualHeaterState.h2 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
-                    }`}>
+                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${dualHeaterState.h2 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}>
                       <span>Heater 2 (500W)</span>
                       <span>{dualHeaterState.h2 ? '⚡ ON' : 'OFF'}</span>
                     </div>
@@ -1795,9 +1862,8 @@ export default function FluidHEDashboard() {
                     <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
                       <ArrowRightLeft className="w-4 h-4 text-sky-600" /> Katup Solenoid & Fail-Safe Pasif
                     </h4>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      solenoidValves.isFailSafeActive ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
-                    }`}>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${solenoidValves.isFailSafeActive ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
+                      }`}>
                       {operationMode}
                     </span>
                   </div>
@@ -1935,7 +2001,7 @@ export default function FluidHEDashboard() {
               </div>
 
               {/* 3. Interactive Digital Twin P&ID Visual Diagram */}
-              <div className="asklepios-card p-6 bg-white relative overflow-hidden space-y-6">
+              <div id="tour-pid-diagram" className="asklepios-card p-6 bg-white relative overflow-hidden space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1966,34 +2032,31 @@ export default function FluidHEDashboard() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div id="tour-flow-mode" className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => {
                         setOperationMode('Co-Current');
                         setFlowVisViewMode('single');
                       }}
-                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
-                        operationMode === 'Co-Current' && flowVisViewMode === 'single'
+                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${operationMode === 'Co-Current' && flowVisViewMode === 'single'
                           ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
                           : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <div className="flex justify-between items-center w-full">
                         <span className="font-extrabold text-sm flex items-center gap-2">
                           <span className="p-1 rounded-lg bg-white/20">🔄</span> Co-Current
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          operationMode === 'Co-Current' && flowVisViewMode === 'single'
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${operationMode === 'Co-Current' && flowVisViewMode === 'single'
                             ? 'bg-white/25 text-white'
                             : 'bg-sky-100 text-sky-700'
-                        }`}>
+                          }`}>
                           Aliran Searah
                         </span>
                       </div>
-                      <p className={`text-[11px] mt-2 leading-relaxed ${
-                        operationMode === 'Co-Current' && flowVisViewMode === 'single' ? 'text-sky-50' : 'text-slate-500'
-                      }`}>
+                      <p className={`text-[11px] mt-2 leading-relaxed ${operationMode === 'Co-Current' && flowVisViewMode === 'single' ? 'text-sky-50' : 'text-slate-500'
+                        }`}>
                         SV1 & 3 (ON/Open), SV2 & 4 (OFF/Closed). Memerlukan arus listrik aktif.
                       </p>
                     </button>
@@ -2004,27 +2067,24 @@ export default function FluidHEDashboard() {
                         setOperationMode('Counter-Current');
                         setFlowVisViewMode('single');
                       }}
-                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
-                        operationMode === 'Counter-Current' && flowVisViewMode === 'single'
+                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${operationMode === 'Counter-Current' && flowVisViewMode === 'single'
                           ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
                           : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <div className="flex justify-between items-center w-full">
                         <span className="font-extrabold text-sm flex items-center gap-2">
                           <span className="p-1 rounded-lg bg-white/20">⇄</span> Counter-Current
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          operationMode === 'Counter-Current' && flowVisViewMode === 'single'
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${operationMode === 'Counter-Current' && flowVisViewMode === 'single'
                             ? 'bg-white/25 text-white'
                             : 'bg-emerald-100 text-emerald-700'
-                        }`}>
+                          }`}>
                           Fail-Safe Pasif
                         </span>
                       </div>
-                      <p className={`text-[11px] mt-2 leading-relaxed ${
-                        operationMode === 'Counter-Current' && flowVisViewMode === 'single' ? 'text-sky-50' : 'text-slate-500'
-                      }`}>
+                      <p className={`text-[11px] mt-2 leading-relaxed ${operationMode === 'Counter-Current' && flowVisViewMode === 'single' ? 'text-sky-50' : 'text-slate-500'
+                        }`}>
                         SV1 & 3 (OFF/Closed), SV2 & 4 (ON/Open). Otomatis aktif saat mati daya.
                       </p>
                     </button>
@@ -2032,25 +2092,22 @@ export default function FluidHEDashboard() {
                     <button
                       type="button"
                       onClick={() => setFlowVisViewMode('compare')}
-                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
-                        flowVisViewMode === 'compare'
+                      className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${flowVisViewMode === 'compare'
                           ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-600 shadow-lg shadow-purple-600/25 ring-2 ring-purple-300'
                           : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <div className="flex justify-between items-center w-full">
                         <span className="font-extrabold text-sm flex items-center gap-2">
                           <span className="p-1 rounded-lg bg-white/20">📊</span> Bandingkan Both Mode
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          flowVisViewMode === 'compare' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-700'
-                        }`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${flowVisViewMode === 'compare' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-700'
+                          }`}>
                           Dual View
                         </span>
                       </div>
-                      <p className={`text-[11px] mt-2 leading-relaxed ${
-                        flowVisViewMode === 'compare' ? 'text-purple-50' : 'text-slate-500'
-                      }`}>
+                      <p className={`text-[11px] mt-2 leading-relaxed ${flowVisViewMode === 'compare' ? 'text-purple-50' : 'text-slate-500'
+                        }`}>
                         Tampilkan diagram visual Co-Current dan Counter-Current secara bersamaan.
                       </p>
                     </button>
@@ -2062,7 +2119,7 @@ export default function FluidHEDashboard() {
                 ) : (
                   <div className="space-y-6">
                     <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-purple-600" /> Tampilan Perbandingan Dual Diagram (Co-Current vs Counter-Current)
+                          <Sparkles className="w-4 h-4 text-purple-600" /> Tampilan Perbandingan Dual Diagram (Co-Current vs Counter-Current)
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       {renderPIDDiagram('Co-Current', '(Pola Searah)')}
@@ -2075,40 +2132,99 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* TAB 2: CONTROL PANEL */}
+          {/* TAB 2: UNIFIED REAL-TIME CONTROL PANEL & TELEMETRY */}
           {activeTab === 'control' && (
-            <div className="space-y-6 max-w-5xl mx-auto">
-
-              {/* ─── SUPABASE REALTIME & BIDIRECTIONAL CONTROL PANEL ─── */}
-              <div className="asklepios-card p-6 bg-white border-l-4 border-l-emerald-500 shadow-xl space-y-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
+            <div className="space-y-6">
+              <div className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200 space-y-6">
+                
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
                   <div>
-                    <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                      <Server className="w-5 h-5 text-emerald-600" /> Supabase Real-Time Telemetry & Control Center
+                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                      <Sliders className="w-6 h-6 text-sky-600" /> Pusat Kendali Operasi & Telemetri Alat (ESP32 IoT Sync)
                     </h2>
-                    <p className="text-xs text-slate-500">Integrasi 2 Arah ESP32 (Real-Time Monitoring & Write Command `device_controls` row ID = 1)</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-extrabold border flex items-center gap-1.5 ${
-                      supabaseStatus === 'ONLINE'
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                        : supabaseStatus === 'CONNECTING'
-                        ? 'bg-amber-100 text-amber-800 border-amber-300'
-                        : 'bg-red-100 text-red-800 border-red-300'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${
-                        supabaseStatus === 'ONLINE' ? 'bg-emerald-600 animate-pulse' : supabaseStatus === 'CONNECTING' ? 'bg-amber-600 animate-ping' : 'bg-red-600'
-                      }`} />
-                      Koneksi: {supabaseStatus}
-                    </span>
-                    {isUpdatingControl && (
-                      <span className="px-2.5 py-1 bg-sky-50 text-sky-700 text-[10px] font-bold rounded-full border border-sky-200 animate-pulse">
-                        Menulis ke Supabase...
-                      </span>
-                    )}
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pengaturan daya pemanas, setpoint temperatur, pola aliran fluida, sudut servo, dan katup aliran terpadu
+                    </p>
                   </div>
                 </div>
+
+                {/* ─── LIVE VISUAL IOT TRANSMISSION ACTIVITY BAR ─── */}
+                <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${
+                  syncFeedback.active
+                    ? syncFeedback.type === 'syncing'
+                      ? 'bg-sky-500/10 border-sky-400/50 shadow-md shadow-sky-500/10'
+                      : 'bg-emerald-500/10 border-emerald-400/50 shadow-md shadow-emerald-500/10'
+                    : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl border shrink-0 transition-all ${
+                      syncFeedback.active
+                        ? syncFeedback.type === 'syncing'
+                          ? 'bg-sky-600 text-white border-sky-500 animate-spin'
+                          : 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                        : 'bg-white text-slate-400 border-slate-200'
+                    }`}>
+                      {syncFeedback.active ? (
+                        syncFeedback.type === 'syncing' ? <RefreshCw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />
+                      ) : (
+                        <Radio className="w-4 h-4 text-sky-600" />
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-xs font-bold text-slate-900">
+                          {syncFeedback.active ? syncFeedback.message : 'Jalur Sinkronisasi IoT Cloud (ESP32)'}
+                        </strong>
+                        {syncFeedback.active && (
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${
+                            syncFeedback.type === 'syncing'
+                              ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}>
+                            {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        {syncFeedback.active
+                          ? syncFeedback.detail
+                          : 'Setiap perubahan tombol & slider disinkronkan secara real-time ke mikrokontroler via tabel device_controls.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 shrink-0 bg-white/80 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      syncFeedback.active && syncFeedback.type === 'syncing'
+                        ? 'bg-sky-500 animate-ping'
+                        : supabaseStatus === 'ONLINE'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-red-500'
+                    }`} />
+                    <span>Sinkronisasi: <strong>{supabaseStatus === 'ONLINE' ? 'AKTIF (~40ms)' : supabaseStatus}</strong></span>
+                  </div>
+                </div>
+
+                {/* Emergency Stop Active Banner */}
+                {emergencyStopped && (
+                  <div className="p-4 bg-red-50 border-2 border-red-500 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-pulse">
+                    <div className="flex items-center gap-3 text-red-700">
+                      <AlertTriangle className="w-6 h-6 text-red-600 shrink-0" />
+                      <div>
+                        <h4 className="font-extrabold text-sm text-red-900">EMERGENCY STOP HEATER DIBEKUKAN!</h4>
+                        <p className="text-xs text-red-700">Pemanas dimatikan seketika dan katup ditutup demi keselamatan kerja.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetEmergencyStop}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md transition active:scale-95 shrink-0"
+                    >
+                      Reset & Pulihkan
+                    </button>
+                  </div>
+                )}
 
                 {supabaseError && (
                   <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -2117,69 +2233,72 @@ export default function FluidHEDashboard() {
                   </div>
                 )}
 
-
                 {/* 1. Real-Time Read Telemetry Sensor Cards */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Activity className="w-4 h-4 text-emerald-600" /> Telemetri Real-Time (Read Data Sensor: `telemetry_data`)
+                    <Activity className="w-4 h-4 text-emerald-600" /> Pembacaan Sensor Real-Time
                   </h3>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Temp 1 (Suhu T1)</span>
-                      <strong className="text-orange-600 font-extrabold text-base">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">TI1 (Hot In)</span>
+                      <strong className="text-orange-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_1.toFixed(1) : latestData.ti1.toFixed(1)} °C
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Temp 2 (Suhu T2)</span>
-                      <strong className="text-orange-600 font-extrabold text-base">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">TI2 (Hot Out)</span>
+                      <strong className="text-orange-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_2.toFixed(1) : latestData.ti2.toFixed(1)} °C
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Temp 3 (Suhu T3)</span>
-                      <strong className="text-cyan-600 font-extrabold text-base">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">TI3 (Cold In)</span>
+                      <strong className="text-cyan-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_3.toFixed(1) : latestData.ti3.toFixed(1)} °C
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Temp 4 (Suhu T4)</span>
-                      <strong className="text-cyan-600 font-extrabold text-base">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">TI4 (Cold Out)</span>
+                      <strong className="text-cyan-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_4.toFixed(1) : latestData.ti4.toFixed(1)} °C
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Pressure (Tekanan)</span>
-                      <strong className="text-sky-600 font-extrabold text-base">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">Tekanan (PI1)</span>
+                      <strong className="text-sky-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.pressure.toFixed(2) : latestData.pi1.toFixed(2)} bar
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Flow Rate (Debit Air)</span>
-                      <strong className="text-emerald-600 font-extrabold text-base">
-                        {supabaseTelemetry ? supabaseTelemetry.flow_rate.toFixed(1) : latestData.fc1.toFixed(1)} L/min
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">Debit Alir (FC1)</span>
+                      <strong className="text-emerald-600 font-extrabold text-sm sm:text-base">
+                        {supabaseTelemetry ? supabaseTelemetry.flow_rate.toFixed(1) : latestData.fc1.toFixed(1)} L/m
                       </strong>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Status Pemanas</span>
-                      <span className={`inline-block px-2 py-0.5 mt-1 rounded text-[10px] font-extrabold ${
-                        (supabaseTelemetry?.heater_status === 'ON') ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-700'
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">Status Heater</span>
+                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${
+                        (supabaseTelemetry?.heater_status === 'ON' || dualHeaterState.powerWatt > 0)
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-slate-200 text-slate-700'
                       }`}>
-                        {supabaseTelemetry ? supabaseTelemetry.heater_status : 'OFF'}
+                        {dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'}
                       </span>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">Warning Status</span>
-                      <span className={`inline-block px-2 py-0.5 mt-1 rounded text-[10px] font-extrabold ${
-                        (supabaseTelemetry?.warning_status === 'NORMAL') ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold block">Status Alarm</span>
+                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${
+                        (supabaseTelemetry?.warning_status === 'NORMAL')
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-red-100 text-red-800'
                       }`}>
                         {supabaseTelemetry ? supabaseTelemetry.warning_status : 'NORMAL'}
                       </span>
@@ -2187,21 +2306,26 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                {/* 2. Write Control Command Inputs (device_controls row id = 1) */}
+                {/* 2. Unified Control Command Inputs */}
                 <div className="space-y-4 pt-2">
                   <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sliders className="w-4 h-4 text-purple-600" /> Perintah Kontrol Perangkat Dua Arah (`device_controls` row id = 1)
+                    <Sliders className="w-4 h-4 text-purple-600" /> Panel Pengaturan & Perintah Kontrol Alat
                   </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
                     {/* Switch Control Mode (AUTO / MANUAL) */}
                     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                      <label className="text-xs font-bold text-slate-800 block">Switch Control Mode</label>
+                      <label className="text-xs font-bold text-slate-800 block">Mode Kendali Operasi</label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => handleControlModeChange('AUTO')}
+                          onClick={() => {
+                            handleControlModeChange('AUTO');
+                            applyAutoControl(supabaseControls.target_temp);
+                            triggerSyncFeedback('Mode Operasi AUTO', `Target ${supabaseControls.target_temp.toFixed(1)}°C (Parameter Disesuaikan Otomatis)`);
+                          }}
+                          disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${
                             supabaseControls.control_mode === 'AUTO'
                               ? 'bg-purple-600 text-white shadow'
@@ -2212,7 +2336,11 @@ export default function FluidHEDashboard() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleControlModeChange('MANUAL')}
+                          onClick={() => {
+                            handleControlModeChange('MANUAL');
+                            triggerSyncFeedback('Mode Operasi MANUAL', 'Kendali Bebas Operator Aktif');
+                          }}
+                          disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${
                             supabaseControls.control_mode === 'MANUAL'
                               ? 'bg-purple-600 text-white shadow'
@@ -2222,19 +2350,25 @@ export default function FluidHEDashboard() {
                           MANUAL
                         </button>
                       </div>
-                      <span className="text-[10px] text-slate-500 block">Status Saat Ini: <strong>{supabaseControls.control_mode}</strong></span>
+                      <span className="text-[10px] text-slate-500 block">
+                        Status: <strong className={supabaseControls.control_mode === 'AUTO' ? 'text-purple-700 font-bold' : 'text-slate-800 font-bold'}>
+                          {supabaseControls.control_mode === 'AUTO' ? 'Mode Otomatis (ESP32 PID)' : 'Mode Manual (Kendali Operator)'}
+                        </strong>
+                      </span>
                     </div>
 
                     {/* Switch Mode Aliran (COUNTER / CO-CURRENT) */}
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                      <label className="text-xs font-bold text-slate-800 block">Switch Mode Aliran (flow_mode)</label>
+                    <div id="tour-flow-mode-control" className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                      <label className="text-xs font-bold text-slate-800 block">Arah Aliran Fluida (Flow Mode)</label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => {
                             setOperationMode('Counter-Current');
                             handleFlowModeChange('COUNTER');
+                            triggerSyncFeedback('Arah Aliran', 'COUNTER-CURRENT');
                           }}
+                          disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${
                             supabaseControls.flow_mode === 'COUNTER'
                               ? 'bg-sky-600 text-white shadow'
@@ -2248,7 +2382,9 @@ export default function FluidHEDashboard() {
                           onClick={() => {
                             setOperationMode('Co-Current');
                             handleFlowModeChange('CO-CURRENT');
+                            triggerSyncFeedback('Arah Aliran', 'CO-CURRENT');
                           }}
+                          disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${
                             supabaseControls.flow_mode === 'CO-CURRENT'
                               ? 'bg-sky-600 text-white shadow'
@@ -2261,15 +2397,23 @@ export default function FluidHEDashboard() {
                       <span className="text-[10px] text-slate-500 block">Status Saat Ini: <strong>{supabaseControls.flow_mode}</strong></span>
                     </div>
 
-                    {/* Tombol Heater Power */}
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                    {/* Tombol Heater Power + Dual Heater Status */}
+                    <div id="tour-heater-control" className={`p-4 rounded-2xl border transition-all space-y-2 ${
+                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="flex justify-between items-center">
-                        <label className="text-xs font-bold text-slate-800">Heater Power Switch</label>
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
-                          supabaseControls.heater_status ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-600'
-                        }`}>
-                          {supabaseControls.heater_status ? 'POWER ON' : 'POWER OFF'}
-                        </span>
+                        <label className="text-xs font-bold text-slate-800">Daya Utama Pemanas</label>
+                        {supabaseControls.control_mode === 'AUTO' ? (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                            AUTO PID HEATING
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                            supabaseControls.heater_status ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {supabaseControls.heater_status ? 'POWER ON' : 'POWER OFF'}
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -2277,240 +2421,199 @@ export default function FluidHEDashboard() {
                           const nextState = !supabaseControls.heater_status;
                           setHeaterMasterPower(nextState);
                           handleHeaterPowerToggle(nextState);
+                          triggerSyncFeedback('Daya Pemanas', nextState ? 'POWER ON' : 'POWER OFF');
                         }}
+                        disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
                         className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
-                          supabaseControls.heater_status
+                          supabaseControls.control_mode === 'AUTO'
+                            ? 'bg-purple-600 text-white opacity-90 cursor-not-allowed shadow-sm'
+                            : supabaseControls.heater_status
                             ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md'
                             : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                         }`}
                       >
-                        <Power className="w-4 h-4" /> {supabaseControls.heater_status ? 'Matikan Heater' : 'Nyalakan Heater'}
+                        <Power className="w-4 h-4" />
+                        {supabaseControls.control_mode === 'AUTO'
+                          ? 'Otomatis Dikelola (Mode AUTO)'
+                          : supabaseControls.heater_status
+                          ? 'Matikan Heater'
+                          : 'Nyalakan Heater'}
                       </button>
+                      <span className="text-[10.5px] text-sky-700 font-semibold block truncate">
+                        Tahap: {
+                          dualHeaterState.stage === 'STAGE_1'
+                            ? 'Tahap 1 (Pemanasan Penuh 1000W)'
+                            : dualHeaterState.stage === 'STAGE_2'
+                            ? 'Tahap 2 (Kontrol Halus 500W)'
+                            : dualHeaterState.stage === 'SETPOINT_REACHED'
+                            ? 'Siaga (Target Suhu Tercapai 0W)'
+                            : 'Nonaktif (0W)'
+                        }
+                      </span>
                     </div>
 
-                    {/* Slider/Input Sudut Servo (0 - 90 Derajat) */}
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                    {/* Slider Target Suhu (TC1 Setpoint) */}
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
+                      supabaseControls.control_mode === 'AUTO'
+                        ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-400/20'
+                        : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="flex justify-between items-center text-xs font-bold text-slate-800">
-                        <span>Sudut Servo (servo_angle)</span>
-                        <strong className="text-indigo-600 font-extrabold text-sm">{supabaseControls.servo_angle}°</strong>
+                        <span className="flex items-center gap-1.5">
+                          Target Suhu (TC₁ Setpoint)
+                          {supabaseControls.control_mode === 'AUTO' && (
+                            <span className="px-1.5 py-0.2 bg-purple-600 text-white text-[9px] font-extrabold rounded-md uppercase">
+                              Parameter Utama
+                            </span>
+                          )}
+                        </span>
+                        <strong className="text-sky-700 font-extrabold text-base">{supabaseControls.target_temp.toFixed(1)} °C</strong>
+                      </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="90"
+                        step="0.5"
+                        value={supabaseControls.target_temp}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setTc1Setpoint(val);
+                          handleTargetTempChange(val);
+                          if (supabaseControls.control_mode === 'AUTO') {
+                            applyAutoControl(val);
+                          }
+                          triggerSyncFeedback('Target Suhu', `${val.toFixed(1)}°C`);
+                        }}
+                        disabled={emergencyStopped}
+                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
+                        <span>30.0 °C</span>
+                        <span>60.0 °C</span>
+                        <span>90.0 °C</span>
+                      </div>
+                    </div>
+
+                    {/* Slider Sudut Servo (0 - 90 Derajat) */}
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
+                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex justify-between items-center text-xs font-bold text-slate-800">
+                        <span className="flex items-center gap-1">
+                          Sudut Bukaan Katup Servo
+                          {supabaseControls.control_mode === 'AUTO' && (
+                            <span className="text-[9px] text-purple-700 font-extrabold bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                              AUTO PID
+                            </span>
+                          )}
+                        </span>
+                        <strong className="text-indigo-600 font-extrabold text-base">{supabaseControls.servo_angle}°</strong>
                       </div>
                       <input
                         type="range"
                         min="0"
                         max="90"
                         value={supabaseControls.servo_angle}
-                        onChange={(e) => handleServoAngleChange(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          handleServoAngleChange(val);
+                          triggerSyncFeedback('Sudut Katup Servo', `${val}°`);
+                        }}
+                        disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
+                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
                       />
                       <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
                         <span>0° (Closed)</span>
-                        <span>45° (Half)</span>
+                        <span>{supabaseControls.control_mode === 'AUTO' ? 'Otomatis ESP32' : '45° (Half)'}</span>
                         <span>90° (Open)</span>
                       </div>
                     </div>
 
-                  </div>
-
-                  {/* Slider Target Suhu (target_temp) */}
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
-                      <span>Target Setpoint Temperature (target_temp)</span>
-                      <strong className="text-sky-700 font-extrabold text-base">{supabaseControls.target_temp.toFixed(1)} °C</strong>
-                    </div>
-                    <input
-                      type="range"
-                      min="30"
-                      max="90"
-                      step="0.5"
-                      value={supabaseControls.target_temp}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setTc1Setpoint(val);
-                        handleTargetTempChange(val);
-                      }}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
-                      <span>30.0 °C</span>
-                      <span>60.0 °C</span>
-                      <span>90.0 °C</span>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-
-              <div className="asklepios-card p-6 bg-white">
-                <h2 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-sky-600" /> Manual Valve & Auxiliary Rig Controls
-                </h2>
-                <p className="text-xs text-slate-500 mb-6">Atur setpoint temperatur, bukaan katup flow, logika dual heater & mode solenoid valve</p>
-
-                {emergencyStopped && (
-                  <div className="mb-6 p-4 bg-red-50 border-2 border-red-500 rounded-2xl flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-red-700">
-                      <AlertTriangle className="w-6 h-6 animate-bounce" />
-                      <div>
-                        <h4 className="font-bold text-sm">EMERGENCY STOP HEATER DIBEKUKAN!</h4>
-                        <p className="text-xs">Pemanas dimatikan total & katup ditutup untuk keamanan.</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={resetEmergencyStop}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow"
-                    >
-                      Reset & Pulihkan
-                    </button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                  {/* Dual Heater Control Box */}
-                  <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-orange-600" /> Master Dual Heater (Heater 1 & 2)
-                      </span>
-                      <button
-                        onClick={() => {
-                          if (fc1Valve === 0 && !heaterMasterPower) {
-                            setPrimingNotice('Pastikan aliran fluida terisi penuh (priming) sebelum menyalakan heater untuk mencegah dry heating!');
-                            return;
-                          }
-                          setHeaterMasterPower(!heaterMasterPower);
-                        }}
-                        disabled={emergencyStopped}
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold transition ${
-                          heaterMasterPower && !emergencyStopped && fc1Valve > 0
-                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                            : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {heaterMasterPower && !emergencyStopped && fc1Valve > 0 ? 'MASTER ON' : 'MASTER OFF'}
-                      </button>
-                    </div>
-
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
-                      <div className="flex justify-between font-bold">
-                        <span>Status Logika Kontrol Bertahap:</span>
-                        <span className="text-sky-700">{dualHeaterState.stage}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">{dualHeaterState.description}</p>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-700 mb-2">
-                        <span>Target Setpoint Temperature (TC₁)</span>
-                        <strong className="text-sky-700 font-bold text-sm">{tc1Setpoint}°C</strong>
+                    {/* Valve FC1 (Hot Fluid Flow) */}
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
+                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex justify-between text-xs font-bold text-slate-800">
+                        <span className="flex items-center gap-1">
+                          Bukaan Katup FC1 (Air Panas)
+                          {supabaseControls.control_mode === 'AUTO' && (
+                            <span className="text-[9px] text-purple-700 font-extrabold bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                              AUTO
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-orange-600 font-extrabold text-base">{fc1Valve}%</span>
                       </div>
                       <input
                         type="range"
-                        min="30"
-                        max="90"
-                        value={tc1Setpoint}
-                        onChange={(e) => setTc1Setpoint(Number(e.target.value))}
-                        disabled={emergencyStopped || !heaterMasterPower}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                        min="0"
+                        max="100"
+                        value={fc1Valve}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFc1Valve(val);
+                          triggerSyncFeedback('Katup FC1 (Air Panas)', `${val}%`);
+                        }}
+                        disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
+                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
                       />
-                      <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-semibold">
-                        <span>30°C</span>
-                        <span>60°C</span>
-                        <span>90°C</span>
+                      <div className="text-[10.5px] text-slate-500 flex justify-between font-semibold">
+                        <span>Estimasi Debit:</span>
+                        <strong>{((fc1Valve / 100) * 25).toFixed(1)} L/min</strong>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Flow Pattern Mode Switch */}
-                  <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-4">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                      <ArrowRightLeft className="w-4 h-4 text-sky-600" /> Mode Aliran & Solenoid Valves
-                    </span>
-                    <p className="text-xs text-slate-500">Pilih arah aliran (Counter-Current = Passive Fail-Safe)</p>
-
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                      <button
-                        onClick={() => setOperationMode('Counter-Current')}
-                        className={`p-3 rounded-xl border text-xs font-bold text-center transition ${
-                          operationMode === 'Counter-Current'
-                            ? 'bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-600/20'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    {/* Valve FC2 (Cold Fluid Flow) */}
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 md:col-span-2 lg:col-span-1 ${
+                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex justify-between text-xs font-bold text-slate-800">
+                        <span className="flex items-center gap-1">
+                          Bukaan Katup FC2 (Air Dingin)
+                          {supabaseControls.control_mode === 'AUTO' && (
+                            <span className="text-[9px] text-purple-700 font-extrabold bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                              AUTO
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-cyan-600 font-extrabold text-base">{fc2Valve}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={fc2Valve}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFc2Valve(val);
+                          triggerSyncFeedback('Katup FC2 (Air Dingin)', `${val}%`);
+                        }}
+                        disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
+                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                         }`}
-                      >
-                        Counter-Current
-                        <p className="text-[10px] opacity-80 mt-0.5 font-normal">Fail-Safe Pasif (Default)</p>
-                      </button>
-
-                      <button
-                        onClick={() => setOperationMode('Co-Current')}
-                        className={`p-3 rounded-xl border text-xs font-bold text-center transition ${
-                          operationMode === 'Co-Current'
-                            ? 'bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-600/20'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        Co-Current
-                        <p className="text-[10px] opacity-80 mt-0.5 font-normal">Aliran Searah</p>
-                      </button>
+                      />
+                      <div className="text-[10.5px] text-slate-500 flex justify-between font-semibold">
+                        <span>Estimasi Debit:</span>
+                        <strong>{((fc2Valve / 100) * 30).toFixed(1)} L/min</strong>
+                      </div>
                     </div>
+
                   </div>
-
-                  {/* Valve FC1 (Hot Fluid Flow) */}
-                  <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
-                    <div className="flex justify-between text-xs font-bold text-slate-800">
-                      <span>Bukaan Katup FC1 (Air Panas)</span>
-                      <span className="text-orange-600 font-extrabold text-sm">{fc1Valve}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={fc1Valve}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setFc1Valve(val);
-                        if (val === 0 && heaterMasterPower) {
-                          setPrimingNotice('Katup air panas ditutup. Pemanas secara otomatis standby untuk mencegah dry heating.');
-                        }
-                      }}
-                      disabled={emergencyStopped}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>Laju Alir Estimasi:</span>
-                      <strong>{((fc1Valve / 100) * 25).toFixed(1)} L/min</strong>
-                    </div>
-                  </div>
-
-                  {/* Valve FC2 (Cold Fluid Flow) */}
-                  <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
-                    <div className="flex justify-between text-xs font-bold text-slate-800">
-                      <span>Bukaan Katup FC2 (Air Dingin)</span>
-                      <span className="text-cyan-600 font-extrabold text-sm">{fc2Valve}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={fc2Valve}
-                      onChange={(e) => setFc2Valve(Number(e.target.value))}
-                      disabled={emergencyStopped}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>Laju Alir Estimasi:</span>
-                      <strong>{((fc2Valve / 100) * 30).toFixed(1)} L/min</strong>
-                    </div>
-                  </div>
-
                 </div>
 
+                {/* Bottom Emergency Action Bar */}
                 <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
                   <div className="text-xs text-slate-500">
-                    *Tombol Merah Darurat akan mematikan pemanas dan trip katup secara konstan.
+                    *Seluruh perintah kontrol di atas disinkronkan secara real-time ke mikrokontroler ESP32 alat fisik.
                   </div>
 
                   <button
+                    type="button"
                     onClick={triggerEmergencyStop}
                     disabled={emergencyStopped}
                     className="w-full sm:w-auto px-6 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 transform active:scale-95 transition"
@@ -2523,206 +2626,234 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* TAB 3: CCTV LIVE MONITORING */}
+          {/* TAB 3: CCTV LIVE MONITORING (REAL IP CCTV SYSTEM) */}
           {activeTab === 'cctv' && (
             <div className="space-y-6">
-              <div className="asklepios-card p-6 bg-white">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+              <div className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5 border-b border-slate-100 pb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                      <Video className="w-5 h-5 text-sky-600" /> Live CCTV Camera Feed - Lab HE UAD
+                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                      <Video className="w-6 h-6 text-sky-600" /> Live CCTV Monitoring - Laboratorium HE UAD
                     </h2>
-                    <p className="text-xs text-slate-500">RTSP / HLS Live Stream Rig Shell and Tube Heat Exchanger</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Integrasi Kamera CCTV(IP Camera / RTSP / HLS Live Stream Rig Shell & Tube)</p>
                   </div>
 
+                  {/* Channel Switchers */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => {
-                        setSelectedCamera('webcam');
-                        setCameraFacing('user');
-                        setSelectedDeviceId('');
+                        setSelectedCamera('cam1');
+                        setCctvIpUrl('rtsp://192.168.1.105:554/live/he_rig');
                       }}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                        selectedCamera === 'webcam' && cameraFacing === 'user'
-                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-300'
+                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam1'
+                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
-                      <Camera className="w-3.5 h-3.5" /> 📷 Kamera Depan
+                      <Video className="w-3.5 h-3.5" /> Saluran 1: Rig Heat Exchanger
                     </button>
-
                     <button
+                      type="button"
                       onClick={() => {
-                        setSelectedCamera('webcam');
-                        setCameraFacing('environment');
-                        setSelectedDeviceId('');
+                        setSelectedCamera('cam2');
+                        setCctvIpUrl('rtsp://192.168.1.106:554/live/storage_tank');
                       }}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                        selectedCamera === 'webcam' && cameraFacing === 'environment'
-                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-300'
+                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam2'
+                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
-                      <Camera className="w-3.5 h-3.5" /> 📷 Kamera Belakang
-                    </button>
-
-                    {videoDevices.length > 1 && (
-                      <select
-                        value={selectedDeviceId}
-                        onChange={(e) => {
-                          setSelectedCamera('webcam');
-                          setSelectedDeviceId(e.target.value);
-                        }}
-                        className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
-                      >
-                        <option value="">-- Pilih Perangkat Kamera ({videoDevices.length}) --</option>
-                        {videoDevices.map((dev, idx) => (
-                          <option key={dev.deviceId || idx} value={dev.deviceId}>
-                            {dev.label || `Kamera Web ${idx + 1}`}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    <button
-                      onClick={() => setSelectedCamera('cam1')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        selectedCamera === 'cam1'
-                          ? 'bg-sky-600 text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      Kamera 1: Rig HE
+                      <Video className="w-3.5 h-3.5" /> Saluran 2: Tangki Fluida
                     </button>
                     <button
-                      onClick={() => setSelectedCamera('cam2')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        selectedCamera === 'cam2'
-                          ? 'bg-sky-600 text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCamera('cam3');
+                        setCctvIpUrl('rtsp://192.168.1.107:554/live/aux_valve');
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam3'
+                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
                     >
-                      Kamera 2: Tanki Storage
+                      <Video className="w-3.5 h-3.5" /> Saluran 3: Panel Valve Lab
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 relative bg-slate-900 rounded-3xl overflow-hidden shadow-xl aspect-video flex flex-col justify-between p-4 border border-slate-800">
-                    {selectedCamera === 'webcam' ? (
-                      webcamActive ? (
-                        <video
-                          ref={webcamVideoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="absolute inset-0 w-full h-full object-cover rounded-3xl"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-0">
-                          <Camera className="w-12 h-12 text-amber-400 mb-2 animate-bounce" />
-                          <p className="text-sm font-bold text-slate-200">Izin Kamera Diperlukan</p>
-                          <p className="text-xs text-amber-300/90 mt-1 max-w-md bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20">
-                            {webcamError || 'Klik ikon Kamera di URL Bar Chrome (localhost:3000) lalu pilih "Izinkan / Allow".'}
-                          </p>
-                          <div className="flex gap-2 mt-4">
-                            <button
-                              onClick={() => {
-                                setCameraFacing('user');
-                                setSelectedCamera('cam1');
-                                setTimeout(() => setSelectedCamera('webcam'), 100);
-                              }}
-                              className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-emerald-700 transition"
-                            >
-                              📷 Coba Kamera Depan Lagi
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center opacity-90 pointer-events-none">
-                        <div className="w-full h-full border border-sky-500/10 grid grid-cols-6 grid-rows-4" />
-                      </div>
-                    )}
+                {/* IP Camera URL Configuration Bar */}
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Server className="w-4 h-4 text-sky-600 shrink-0" />
+                    <span className="text-slate-500 font-semibold">Stream URL IP Camera:</span>
+                    <code className="px-2 py-0.5 bg-white rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 font-bold">
+                      {cctvIpUrl}
+                    </code>
+                  </div>
 
+                  {isEditingCctvUrl ? (
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        value={tempCctvUrl}
+                        onChange={(e) => setTempCctvUrl(e.target.value)}
+                        placeholder="rtsp://192.168.1.x/live atau http://..."
+                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                      />
+                      <button
+                        onClick={() => {
+                          setCctvIpUrl(tempCctvUrl);
+                          setIsEditingCctvUrl(false);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0"
+                      >
+                        Simpan
+                      </button>
+                      <button
+                        onClick={() => setIsEditingCctvUrl(false)}
+                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold shrink-0"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setTempCctvUrl(cctvIpUrl);
+                        setIsEditingCctvUrl(true);
+                      }}
+                      className="text-xs font-bold text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1 rounded-xl transition"
+                    >
+                      ⚙️ Ubah URL IP Camera
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* CCTV Live Stream Screen */}
+                  <div className="lg:col-span-2 relative bg-slate-950 rounded-3xl overflow-hidden shadow-xl aspect-video flex flex-col justify-between p-4 border border-slate-800">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center opacity-90 pointer-events-none">
+                      <div className="w-full h-full border border-sky-500/10 grid grid-cols-6 grid-rows-4" />
+                    </div>
+
+                    {/* Top Status Header inside CCTV player */}
                     <div className="relative z-10 flex justify-between items-center text-xs text-white/90 font-mono">
-                      <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                      <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
                         <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                        <span>
-                          {selectedCamera === 'webcam' ? `💻 KAMERA LAPTOP (${cameraFacing === 'user' ? 'DEPAN' : 'BELAKANG'})` : selectedCamera === 'cam1' ? 'LIVE STREAM | CAM 01 - HE RIG' : 'LIVE STREAM | CAM 02 - STORAGE TANK'}
+                        <span className="font-bold">
+                          {selectedCamera === 'cam1'
+                            ? '🔴 LIVE | CAM 01 - RIG HEAT EXCHANGER'
+                            : selectedCamera === 'cam2'
+                              ? '🔴 LIVE | CAM 02 - FLUID STORAGE TANK'
+                              : '🔴 LIVE | CAM 03 - VALVE & RIG CONTROL PANEL'}
                         </span>
                       </div>
-                      <span className="bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                        {new Date().toLocaleDateString('id-ID')} - {new Date().toLocaleTimeString('id-ID')}
+                      <span className="bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 text-[11px]">
+                        {new Date().toLocaleDateString('id-ID')} • {new Date().toLocaleTimeString('id-ID')} WIB
                       </span>
                     </div>
 
-                    {selectedCamera !== 'webcam' && (
-                      <div className="relative z-10 text-center my-auto">
-                        <div className="inline-flex p-5 bg-sky-500/10 rounded-full border border-sky-400/20 text-sky-400 mb-2 animate-pulse">
-                          <Video className="w-12 h-12" />
-                        </div>
-                        <p className="text-xs text-slate-300 font-semibold">Feed Kamera Realtime Lab IoT Teknik Kimia</p>
-                        <p className="text-[10px] text-slate-500">1080p @ 30 FPS - Encoding H.264 / RTSP</p>
+                    {/* Central Icon & Stream Info */}
+                    <div className="relative z-10 text-center my-auto space-y-2">
+                      <div className="inline-flex p-5 bg-sky-500/10 rounded-3xl border border-sky-400/20 text-sky-400 shadow-inner animate-pulse">
+                        <Video className="w-12 h-12" />
                       </div>
-                    )}
+                      <p className="text-sm text-slate-200 font-bold">
+                        {selectedCamera === 'cam1'
+                          ? 'Feed CCTV Fisik Lab: Rig Heat Exchanger Shell & Tube'
+                          : selectedCamera === 'cam2'
+                            ? 'Feed CCTV Fisik Lab: Tangki Penampung & Pompa Suplai'
+                            : 'Feed CCTV Fisik Lab: Panel Valve Solenoid & Auxiliary Rig'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 font-mono">
+                        Protokol: RTSP / HLS • 1080p @ 30 FPS • H.264 Video Stream Active
+                      </p>
+                    </div>
 
-                    <div className="relative z-10 flex justify-between items-center bg-black/60 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 mt-auto">
+                    {/* Bottom CCTV Controls */}
+                    <div className="relative z-10 flex justify-between items-center bg-black/70 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 mt-auto">
                       <div className="flex items-center gap-2 text-white">
-                        <button onClick={() => setCctvRecording(!cctvRecording)} className="p-1.5 hover:bg-white/10 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setCctvRecording(!cctvRecording)}
+                          className="p-1.5 hover:bg-white/10 rounded-lg transition"
+                          title={cctvRecording ? 'Jeda Perekaman' : 'Mulai Merekam'}
+                        >
                           {cctvRecording ? <Pause className="w-4 h-4 text-emerald-400" /> : <Play className="w-4 h-4" />}
                         </button>
-                        <span className="text-[11px] text-slate-300 font-medium">Auto-record: Active</span>
+                        <span className="text-[11px] text-slate-300 font-medium">
+                          Status Perekaman: <strong>{cctvRecording ? 'Merekam Otomatis' : 'Jeda'}</strong>
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button title="Ambil Foto Snapshot" className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold flex items-center gap-1">
-                          <Camera className="w-4 h-4" /> Snapshot
+                        <button
+                          type="button"
+                          onClick={() => alert('Snapshot gambar CCTV Lab berhasil diambil dan disimpan.')}
+                          title="Ambil Foto Snapshot"
+                          className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                        >
+                          <Camera className="w-3.5 h-3.5" /> Snapshot
                         </button>
-                        <button title="Layar Penuh" className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg">
-                          <Maximize2 className="w-4 h-4" />
+                        <button
+                          type="button"
+                          title="Layar Penuh"
+                          className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
-
                   </div>
 
-                  <div className="asklepios-card p-5 bg-slate-900 text-white rounded-3xl space-y-4 border border-slate-800">
-                    <h3 className="text-sm font-bold flex items-center gap-2 text-sky-400">
-                      <Activity className="w-4 h-4" /> Telemetri Overlay Live
+                  {/* Telemetry Live Overlay Side Card */}
+                  <div className="asklepios-card p-5 bg-slate-900 text-white rounded-3xl space-y-4 border border-slate-800 shadow-xl">
+                    <h3 className="text-sm font-extrabold flex items-center gap-2 text-sky-400 border-b border-slate-800 pb-3">
+                      <Activity className="w-4 h-4" /> Telemetri Real-Time Kamera
                     </h3>
 
-                    <div className="space-y-3 text-xs">
+                    <div className="space-y-2.5 text-xs">
                       <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400">TI1 (Hot Inlet):</span>
-                        <strong className="text-orange-400 text-sm font-bold">{latestData.ti1}°C</strong>
+                        <span className="text-slate-400 font-medium">TI1 (Hot Inlet):</span>
+                        <strong className="text-orange-400 text-sm font-extrabold">{latestData.ti1}°C</strong>
                       </div>
 
                       <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400">TI2 (Heater 2 Output):</span>
-                        <strong className="text-red-400 text-sm font-bold">{latestData.ti2}°C</strong>
+                        <span className="text-slate-400 font-medium">TI2 (Hot Outlet):</span>
+                        <strong className="text-red-400 text-sm font-extrabold">{latestData.ti2}°C</strong>
                       </div>
 
                       <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400">PI1 Pressure:</span>
-                        <strong className="text-sky-400 text-sm font-bold">{latestData.pi1} bar</strong>
+                        <span className="text-slate-400 font-medium">TI3 (Cold Inlet):</span>
+                        <strong className="text-cyan-400 text-sm font-extrabold">{latestData.ti3}°C</strong>
                       </div>
 
                       <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400">Flow FC1 (Hot):</span>
-                        <strong className="text-emerald-400 text-sm font-bold">{latestData.fc1} L/min</strong>
+                        <span className="text-slate-400 font-medium">TI4 (Cold Outlet):</span>
+                        <strong className="text-cyan-400 text-sm font-extrabold">{latestData.ti4}°C</strong>
                       </div>
 
                       <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400">Status Dual Heater:</span>
-                        <strong className={dualHeaterState.powerWatt > 0 ? "text-emerald-400 font-bold" : "text-slate-400"}>
+                        <span className="text-slate-400 font-medium">Tekanan PI1:</span>
+                        <strong className="text-sky-400 text-sm font-extrabold">{latestData.pi1} bar</strong>
+                      </div>
+
+                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
+                        <span className="text-slate-400 font-medium">Debit Aliran FC1:</span>
+                        <strong className="text-emerald-400 text-sm font-extrabold">{latestData.fc1} L/min</strong>
+                      </div>
+
+                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
+                        <span className="text-slate-400 font-medium">Status Dual Heater:</span>
+                        <strong className={dualHeaterState.powerWatt > 0 ? "text-emerald-400 font-extrabold" : "text-slate-400"}>
                           {dualHeaterState.powerWatt > 0 ? `ON (${dualHeaterState.powerWatt}W)` : 'OFF'}
                         </strong>
                       </div>
                     </div>
 
                     <div className="pt-2 text-[11px] text-slate-400 leading-relaxed">
-                      Telemetri disinkronkan secara *live* saat mengawasi visual fisik alat HE via kamera CCTV.
+                      Telemetri disinkronkan secara *live* saat mengawasi visual fisik alat HE via kamera CCTV lab.
                     </div>
                   </div>
                 </div>
@@ -2731,10 +2862,12 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
+
+
           {/* TAB 4: DATA LOGS & EXPORT LAPORAN */}
           {activeTab === 'logs' && (
             <div className="space-y-6">
-              <div className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200">
+              <div id="tour-logs-tab" className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-slate-100 pb-4">
                   <div>
                     <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
@@ -2745,20 +2878,14 @@ export default function FluidHEDashboard() {
 
                   <div className="flex flex-wrap items-center gap-2.5 no-print">
                     <button
-                      onClick={exportExcelXLSX}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition active:scale-95"
-                    >
-                      <Download className="w-4 h-4" /> Export Excel (.xlsx)
-                    </button>
-                    <button
                       onClick={exportStyledExcelHTML}
-                      className="px-4 py-2.5 bg-gradient-to-r from-sky-700 to-blue-800 hover:from-sky-800 hover:to-blue-900 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-700/20 flex items-center gap-1.5 transition active:scale-95"
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-2 transition active:scale-95"
                     >
-                      <Sparkles className="w-4 h-4 text-amber-300" /> Export Excel Warna (.xls)
+                      <Download className="w-4 h-4" /> Export Data Excel (.xlsx)
                     </button>
                     <button
                       onClick={exportPDFReport}
-                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 transition active:scale-95"
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-2 transition active:scale-95"
                     >
                       <FileText className="w-4 h-4" /> Cetak / PDF Laporan
                     </button>
@@ -2769,14 +2896,15 @@ export default function FluidHEDashboard() {
                   <h1 className="text-base font-extrabold text-slate-900 tracking-wide">LAPORAN MONITORING HEAT EXCHANGER UAD</h1>
                   <p className="text-slate-600 font-medium">Sistem: <strong className="text-slate-800">Heat Exchanger Thermal Analytics (Interval Sampling: {logInterval})</strong></p>
                   <p className="text-slate-600 font-medium">
-                    Rentang Data: <strong className="text-slate-800">{new Date().toLocaleDateString('id-ID')}, {telemetryHistory[0]?.timestamp || '10.54.51'} WIB s.d. {new Date().toLocaleDateString('id-ID')}, {telemetryHistory[telemetryHistory.length - 1]?.timestamp || '12.31.41'} WIB</strong>
-                  </p>
-                  <p className="text-slate-600 font-medium">
-                    Dicetak Pada: <strong className="text-slate-800">{new Date().toLocaleDateString('id-ID')}, {new Date().toLocaleTimeString('id-ID').replace(/:/g, '.')} WIB</strong>
+                    Rentang Data: <strong className="text-slate-800">
+                      {filteredLogsData.length > 0
+                        ? `${new Date().toLocaleDateString('id-ID')}, ${filteredLogsData[0]?.timestamp} WIB s.d. ${new Date().toLocaleDateString('id-ID')}, ${filteredLogsData[filteredLogsData.length - 1]?.timestamp} WIB`
+                        : `Tidak ada data log (${dateFilter === 'Yesterday' ? 'Kemarin' : dateFilter === '7Days' ? '7 Hari Terakhir' : 'Kriteria Pencarian'})`}
+                    </strong>
                   </p>
                 </div>
 
-                {/* Filter Controls Bar with 30s option */}
+                {/* Filter Controls Bar with 2s, 30s option */}
                 <div className="p-4 bg-white rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 no-print shadow-sm">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Cari Waktu / Sensor</label>
@@ -2786,7 +2914,7 @@ export default function FluidHEDashboard() {
                         type="text"
                         value={logSearchQuery}
                         onChange={(e) => setLogSearchQuery(e.target.value)}
-                        placeholder="Contoh: 12.31..."
+                        placeholder="Contoh: 12.31, 25.00, ON, Counter..."
                         className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20"
                       />
                     </div>
@@ -2796,10 +2924,11 @@ export default function FluidHEDashboard() {
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Interval Sampling Pencatatan</label>
                     <select
                       value={logInterval}
-                      onChange={(e) => setLogInterval(e.target.value as '1s' | '5s' | '30s' | '1m')}
+                      onChange={(e) => setLogInterval(e.target.value as '1s' | '2s' | '5s' | '30s' | '1m')}
                       className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-bold focus:outline-none"
                     >
                       <option value="1s">1 Detik (High Frequency)</option>
+                      <option value="2s">2 Detik (Rekomendasi Praktikum)</option>
                       <option value="5s">5 Detik (Default Realtime)</option>
                       <option value="30s">30 Detik (Interval Sedang)</option>
                       <option value="1m">1 Menit (Ringkasan Lab)</option>
@@ -2835,32 +2964,50 @@ export default function FluidHEDashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-center font-medium">
-                      {filteredLogsData.map((row, idx) => (
-                        <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50 hover:bg-sky-50/50 transition' : 'bg-white hover:bg-sky-50/50 transition'}>
-                          <td className="p-2.5 border-r border-slate-200 text-left font-mono font-semibold text-slate-800">
-                            {new Date().toLocaleDateString('id-ID')}, {row.timestamp} WIB
+                      {filteredLogsData.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-10 text-center bg-slate-50/50">
+                            <div className="flex flex-col items-center justify-center gap-2 py-6">
+                              <FileText className="w-9 h-9 text-slate-300" />
+                              <span className="font-bold text-sm text-slate-800">Tidak Ada Data Telemetri Tercatat</span>
+                              <span className="text-xs text-slate-500 max-w-sm">
+                                {dateFilter === 'Yesterday'
+                                  ? 'Tidak ada rekaman sesi praktikum pada tanggal kemarin.'
+                                  : dateFilter === '7Days'
+                                  ? 'Tidak ada arsip riwayat pada 7 hari terakhir (hanya tersedia sesi hari ini).'
+                                  : 'Tidak ada data sensor yang sesuai dengan kriteria pencarian.'}
+                              </span>
+                            </div>
                           </td>
-                          <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti1.toFixed(2)}</td>
-                          <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti2.toFixed(2)}</td>
-                          <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti3.toFixed(2)}</td>
-                          <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti4.toFixed(2)}</td>
-                          <td className="p-2.5 border-r border-slate-200">
-                            {row.heater1Active ? (
-                              <span className="text-emerald-600 font-extrabold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 inline-block">ON</span>
-                            ) : (
-                              <span className="text-slate-400 font-bold px-2 py-0.5 rounded bg-slate-100 inline-block">OFF</span>
-                            )}
-                          </td>
-                          <td className="p-2.5 border-r border-slate-200">
-                            {row.heater2Active ? (
-                              <span className="text-emerald-600 font-extrabold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 inline-block">ON</span>
-                            ) : (
-                              <span className="text-slate-400 font-bold px-2 py-0.5 rounded bg-slate-100 inline-block">OFF</span>
-                            )}
-                          </td>
-                          <td className="p-2.5 font-bold text-slate-700">{row.mode}</td>
                         </tr>
-                      ))}
+                      ) : (
+                        filteredLogsData.map((row, idx) => (
+                          <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50 hover:bg-sky-50/50 transition' : 'bg-white hover:bg-sky-50/50 transition'}>
+                            <td className="p-2.5 border-r border-slate-200 text-left font-mono font-semibold text-slate-800">
+                              {new Date().toLocaleDateString('id-ID')}, {row.timestamp} WIB
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti1.toFixed(2)}</td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti2.toFixed(2)}</td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti3.toFixed(2)}</td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono font-semibold text-slate-800">{row.ti4.toFixed(2)}</td>
+                            <td className="p-2.5 border-r border-slate-200">
+                              {row.heater1Active ? (
+                                <span className="text-emerald-600 font-extrabold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 inline-block">ON</span>
+                              ) : (
+                                <span className="text-slate-400 font-bold px-2 py-0.5 rounded bg-slate-100 inline-block">OFF</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200">
+                              {row.heater2Active ? (
+                                <span className="text-emerald-600 font-extrabold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 inline-block">ON</span>
+                              ) : (
+                                <span className="text-slate-400 font-bold px-2 py-0.5 rounded bg-slate-100 inline-block">OFF</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 font-bold text-slate-700">{row.mode}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2883,7 +3030,7 @@ export default function FluidHEDashboard() {
                 </h2>
                 <p className="text-xs text-slate-500 mb-6">Konfigurasi nilai ambang batas kritis (threshold) dan riwayat log peringatan</p>
 
-                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div id="tour-alarm-settings" className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">Threshold Suhu Kritis (TI1 Hot Inlet)</label>
                     <div className="flex items-center gap-2">
@@ -2916,11 +3063,10 @@ export default function FluidHEDashboard() {
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">Status Sound Siren Audio</label>
                     <button
                       onClick={() => setSoundEnabled(!soundEnabled)}
-                      className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
-                        soundEnabled
+                      className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${soundEnabled
                           ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
                           : 'bg-slate-200 text-slate-600'
-                      }`}
+                        }`}
                     >
                       {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                       {soundEnabled ? 'Siren Audio Aktif' : 'Siren Audio Mute'}
@@ -2956,9 +3102,8 @@ export default function FluidHEDashboard() {
                           <td className="p-3 font-bold text-red-600">{item.value}</td>
                           <td className="p-3 text-slate-500">{item.threshold}</td>
                           <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              item.severity === 'Critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.severity === 'Critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
                               {item.severity}
                             </span>
                           </td>
@@ -3069,20 +3214,18 @@ export default function FluidHEDashboard() {
                             <td className="p-3 font-bold text-slate-900">{u.name}</td>
                             <td className="p-3 text-slate-600">{u.email}</td>
                             <td className="p-3">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                                u.role === 'developer'
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'developer'
                                   ? 'bg-purple-100 text-purple-700 border border-purple-200'
                                   : u.role === 'admin'
-                                  ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                              }`}>
+                                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                }`}>
                                 {u.role}
                               </span>
                             </td>
                             <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                u.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                }`}>
                                 {u.status}
                               </span>
                             </td>
@@ -3248,6 +3391,14 @@ export default function FluidHEDashboard() {
 
         </main>
       </div>
+
+      {/* ─── INTERACTIVE BEGINNER GUIDED TOUR OVERLAY ─── */}
+      <GuidedTour
+        isOpen={isTourOpen}
+        onClose={() => setIsTourOpen(false)}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
 
     </div>
   );

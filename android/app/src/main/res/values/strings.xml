@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Heat Exchanger</string>
+    <string name="title_activity_main">Heat Exchanger</string>
+    <string name="package_name">com.heatexchanger.app</string>
+    <string name="custom_url_scheme">com.heatexchanger.app</string>
+</resources>
