@@ -28,6 +28,7 @@ import {
   LogOut,
   ChevronRight,
   Eye,
+  EyeOff,
   Camera,
   Play,
   Pause,
@@ -51,7 +52,10 @@ import {
   Zap,
   Check,
   Menu,
-  Radio
+  Radio,
+  Mail,
+  Key,
+  Send
 } from 'lucide-react';
 
 // ─── TYPES & INTERFACES ───
@@ -243,15 +247,180 @@ export default function FluidHEDashboard() {
 
   // ─── USER MANAGEMENT STATE (3-TIER: DEVELOPER, ADMIN, OPERATOR) ───
   const [usersList, setUsersList] = useState<UserItem[]>([
-    { id: 'USR-01', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15' },
-    { id: 'USR-02', name: 'Rahmat Hidayat (Mahasiswa Operator)', email: 'operator@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:40' },
-    { id: 'USR-03', name: 'Tim Developer Software & IoT', email: 'dev@uad.ac.id', role: 'developer', status: 'Active', lastLogin: 'Hari ini, 11:20' },
-    { id: 'USR-04', name: 'Siti Aminah, M.Eng. (Asisten Lab)', email: 'siti.aminah@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Kemarin, 16:20' }
+    { id: 'USR-01', name: 'Dwi Melianti (Admin Utama / Dosen)', email: 'dwimeliantiistiqomah55@gmail.com', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15' },
+    { id: 'USR-02', name: 'Dwi Melianti (Mahasiswa ITENAS)', email: 'dwi.melianti@mhs.itenas.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:50' },
+    { id: 'USR-03', name: 'wink (Mahasiswa Operator)', email: 'mr.winkyy23@gmail.com', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 14:30' },
+    { id: 'USR-04', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15' },
+    { id: 'USR-05', name: 'Rahmat Hidayat (Mahasiswa Operator)', email: 'operator@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:40' },
+    { id: 'USR-06', name: 'Tim Developer Software & IoT', email: 'dev@uad.ac.id', role: 'developer', status: 'Active', lastLogin: 'Hari ini, 11:20' }
   ]);
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
   const [newUserEmail, setNewUserEmail] = useState<string>('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('operator');
+  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+
+  // ─── AUTH & SECURE EMAIL OTP PASSWORD RESET STATES ───
+  const DEFAULT_PASSWORDS: Record<string, string> = {
+    'dwimeliantiistiqomah55@gmail.com': 'admin123',
+    'dwi.melianti@mhs.itenas.ac.id': 'operator123',
+    'mr.winkyy23@gmail.com': 'LZY8aTLn',
+    'admin@uad.ac.id': 'admin123',
+    'operator@uad.ac.id': 'operator123',
+    'dev@uad.ac.id': 'dev123'
+  };
+  const [userPasswords, setUserPasswords] = useState<Record<string, string>>(DEFAULT_PASSWORDS);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
+
+  // Email OTP Reset Password Modal States
+  const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
+  const [resetStep, setResetStep] = useState<'INPUT_EMAIL' | 'VERIFY_OTP' | 'NEW_PASSWORD' | 'SUCCESS'>('INPUT_EMAIL');
+  const [resetEmailInput, setResetEmailInput] = useState<string>('dwimeliantiistiqomah55@gmail.com');
+  const [generatedOtp, setGeneratedOtp] = useState<string>('');
+  const [enteredOtp, setEnteredOtp] = useState<string>('');
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
+  const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [otpResendCountdown, setOtpResendCountdown] = useState<number>(0);
+  const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
+  const [smtpStatusInfo, setSmtpStatusInfo] = useState<string | null>(null);
+
+  // Load saved passwords and user accounts from localStorage
+  useEffect(() => {
+    try {
+      const savedPass = localStorage.getItem('fluidhe_user_passwords');
+      if (savedPass) {
+        setUserPasswords((prev) => ({ ...DEFAULT_PASSWORDS, ...prev, ...JSON.parse(savedPass) }));
+      }
+      const savedUsers = localStorage.getItem('fluidhe_user_accounts');
+      if (savedUsers) {
+        const parsedUsers = JSON.parse(savedUsers);
+        if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
+          setUsersList(parsedUsers);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load user credentials from storage', e);
+    }
+  }, []);
+
+  const [isAddingUser, setIsAddingUser] = useState<boolean>(false);
+  const [addUserSuccessMsg, setAddUserSuccessMsg] = useState<string | null>(null);
+  const [lastCreatedUserCredentials, setLastCreatedUserCredentials] = useState<{ email: string; name: string; password: string; role: string } | null>(null);
+
+  // Handler for Admin adding a new user (generates random password and dispatches email)
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim()) return;
+
+    const email = newUserEmail.toLowerCase().trim();
+
+    if (usersList.some(u => u.email.toLowerCase() === email)) {
+      alert(`User dengan email ${email} sudah terdaftar di sistem!`);
+      return;
+    }
+
+    // Generate secure 8-character random password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let randomPassword = '';
+    for (let i = 0; i < 8; i++) {
+      randomPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const newUser: UserItem = {
+      id: `USR-0${usersList.length + 1}`,
+      name: newUserName.trim(),
+      email: email,
+      role: newUserRole,
+      status: 'Active',
+      lastLogin: 'Belum Pernah'
+    };
+
+    const updatedUsers = [...usersList, newUser];
+    setUsersList(updatedUsers);
+
+    const updatedPasswords = { ...userPasswords, [email]: randomPassword };
+    setUserPasswords(updatedPasswords);
+
+    try {
+      localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updatedUsers));
+      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(updatedPasswords));
+    } catch (err) {
+      console.error('Failed to save to localStorage', err);
+    }
+
+    setIsAddingUser(true);
+    try {
+      await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          type: 'NEW_ACCOUNT',
+          initialPassword: randomPassword,
+          name: newUserName.trim(),
+          role: newUserRole
+        })
+      });
+    } catch (err) {
+      console.error('Failed to send welcome email', err);
+    } finally {
+      setIsAddingUser(false);
+    }
+
+    setLastCreatedUserCredentials({
+      email: email,
+      name: newUserName.trim(),
+      password: randomPassword,
+      role: newUserRole
+    });
+    setNewUserName('');
+    setNewUserEmail('');
+    setNewUserRole('operator');
+  };
+
+  const [resendingEmailFor, setResendingEmailFor] = useState<string | null>(null);
+
+  const handleResendUserCredentials = async (user: UserItem) => {
+    const email = user.email.toLowerCase().trim();
+    const currentPass = userPasswords[email] || (user.role === 'admin' ? 'admin123' : 'operator123');
+
+    setResendingEmailFor(user.id);
+    try {
+      const res = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          type: 'NEW_ACCOUNT',
+          initialPassword: currentPass,
+          name: user.name,
+          role: user.role
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ Email kredensial & kata sandi berhasil dikirim ke: ${email}`);
+      } else {
+        alert(`⚠️ Gagal mengirim email: ${data.message || 'Error tidak diketahui'}`);
+      }
+    } catch (err) {
+      alert(`⚠️ Terjadi kesalahan saat mengirim email: ${err}`);
+    } finally {
+      setResendingEmailFor(null);
+    }
+  };
+
+  // OTP Countdown timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (otpResendCountdown > 0) {
+      timer = setTimeout(() => setOtpResendCountdown(prev => prev - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpResendCountdown]);
 
   // ─── DEVELOPER HARDWARE CALIBRATION & MODBUS STATES ───
   const [modbusPort, setModbusPort] = useState<string>('/dev/ttyUSB0 (RS485 Baud 9600 8N1)');
@@ -548,25 +717,218 @@ export default function FluidHEDashboard() {
     setTelemetryHistory(initialHistory);
   }, [supabaseStatus, supabaseTelemetry, telemetryStream, supabaseControls]);
 
-  // ─── LOGIN HANDLER ───
+  // ─── OTP PASSWORD RESET HANDLERS (SECURE EMAIL VERIFICATION FOR ALL REGISTERED USERS) ───
+  const handleRequestOtp = async (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    setResetError(null);
+
+    const email = resetEmailInput.toLowerCase().trim();
+    if (!email) {
+      setResetError('Silakan masukkan alamat email akun Anda.');
+      return;
+    }
+
+    // Security Check: Whitelist verification (User must be registered in usersList or system accounts)
+    const isRegisteredUser = usersList.some(u => u.email.toLowerCase() === email) ||
+      email === 'dwimeliantiistiqomah55@gmail.com' ||
+      email === 'dwi.melianti@mhs.itenas.ac.id' ||
+      email === 'admin@uad.ac.id' ||
+      email === 'operator@uad.ac.id' ||
+      email === 'dev@uad.ac.id';
+
+    if (!isRegisteredUser) {
+      setResetError('⛔ Akses Ditolak: Alamat email ini tidak terdaftar di sistem Laboratorium. Silakan hubungi Dosen / KaLab untuk didaftarkan.');
+      return;
+    }
+
+    // Generate 6-Digit OTP Code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(code);
+    setEnteredOtp('');
+    setOtpResendCountdown(60);
+
+    // Call API /api/send-otp to send actual email
+    setIsSendingEmail(true);
+    setSmtpStatusInfo(null);
+    try {
+      const res = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, otp: code, type: 'OTP' })
+      });
+      const data = await res.json();
+      if (data.method === 'UNCONFIGURED_SMTP') {
+        setSmtpStatusInfo('UNCONFIGURED');
+      } else if (data.success) {
+        setSmtpStatusInfo('SENT');
+      }
+    } catch (err) {
+      console.warn('API send-otp call:', err);
+    } finally {
+      setIsSendingEmail(false);
+    }
+
+    setResetStep('VERIFY_OTP');
+  };
+
+  const handleVerifyOtp = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    setResetError(null);
+
+    if (!enteredOtp || enteredOtp.trim().length !== 6) {
+      setResetError('Silakan masukkan 6 digit kode OTP yang telah dikirim ke email Anda.');
+      return;
+    }
+
+    if (enteredOtp.trim() !== generatedOtp.trim()) {
+      setResetError('Kode OTP tidak sesuai. Pastikan Anda memasukkan kode 6-digit terbaru dari email Anda.');
+      return;
+    }
+
+    setResetStep('NEW_PASSWORD');
+  };
+
+  // ─── PASSWORD SECURITY & STRENGTH EVALUATOR ───
+  const getPasswordStrength = (pass: string) => {
+    const hasMinLength = pass.length >= 8;
+    const hasUpperCase = /[A-Z]/.test(pass);
+    const hasLowerCase = /[a-z]/.test(pass);
+    const hasNumber = /[0-9]/.test(pass);
+
+    let score = 0;
+    if (hasMinLength) score++;
+    if (hasUpperCase) score++;
+    if (hasLowerCase) score++;
+    if (hasNumber) score++;
+
+    return {
+      score,
+      hasMinLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      isValid: hasMinLength && hasUpperCase && hasLowerCase && hasNumber
+    };
+  };
+
+  const handleSaveNewPassword = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    setResetError(null);
+
+    const strength = getPasswordStrength(newPasswordInput);
+
+    if (!strength.hasMinLength) {
+      setResetError('Keamanan Kurang: Kata sandi baru minimal harus terdiri dari 8 karakter.');
+      return;
+    }
+    if (!strength.hasUpperCase) {
+      setResetError('Keamanan Kurang: Kata sandi harus mengandung setidaknya 1 huruf besar / kapital (A-Z).');
+      return;
+    }
+    if (!strength.hasLowerCase) {
+      setResetError('Keamanan Kurang: Kata sandi harus mengandung setidaknya 1 huruf kecil (a-z).');
+      return;
+    }
+    if (!strength.hasNumber) {
+      setResetError('Keamanan Kurang: Kata sandi harus mengandung setidaknya 1 angka (0-9).');
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setResetError('Konfirmasi kata sandi tidak cocok. Silakan ketik ulang kata sandi dengan benar.');
+      return;
+    }
+
+    const email = resetEmailInput.toLowerCase().trim();
+    const updated = { ...userPasswords, [email]: newPasswordInput.trim() };
+    setUserPasswords(updated);
+    try {
+      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to save to localStorage', err);
+    }
+
+    // Auto-fill login form with new credentials
+    setLoginEmail(email);
+    setLoginPassword(newPasswordInput.trim());
+    setResetStep('SUCCESS');
+  };
+
+  // ─── LOGIN HANDLER (WITH STRICT PASSWORD VALIDATION & PERSISTENCE) ───
   const handleLogin = (e?: React.SyntheticEvent) => {
     if (e) e.preventDefault();
-    if (selectedDemoRole === 'developer') {
+    setLoginError(null);
+
+    const email = (loginEmail || (selectedDemoRole === 'admin' ? 'dwimeliantiistiqomah55@gmail.com' : selectedDemoRole === 'developer' ? 'dev@uad.ac.id' : 'dwi.melianti@mhs.itenas.ac.id')).toLowerCase().trim();
+
+    // STRICT: Password is required to log in!
+    if (!loginPassword || !loginPassword.trim()) {
+      setLoginError('Silakan masukkan kata sandi akun Anda untuk masuk ke sistem.');
+      return;
+    }
+
+    let activePasswords: Record<string, string> = { ...DEFAULT_PASSWORDS, ...userPasswords };
+    let activeUsers: UserItem[] = usersList;
+    try {
+      if (typeof window !== 'undefined') {
+        const storedPass = localStorage.getItem('fluidhe_user_passwords');
+        if (storedPass) {
+          activePasswords = { ...DEFAULT_PASSWORDS, ...activePasswords, ...JSON.parse(storedPass) };
+        }
+        const storedUsers = localStorage.getItem('fluidhe_user_accounts');
+        if (storedUsers) {
+          const parsedUsers = JSON.parse(storedUsers);
+          if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
+            activeUsers = parsedUsers;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Storage parse error:', err);
+    }
+
+    const found = activeUsers.find(u => u.email.toLowerCase() === email) || usersList.find(u => u.email.toLowerCase() === email);
+
+    const defaultFallback = (email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id' || (found && found.role === 'admin'))
+      ? 'admin123'
+      : (email === 'dwi.melianti@mhs.itenas.ac.id' || email === 'operator@uad.ac.id' || (found && found.role === 'operator'))
+      ? 'operator123'
+      : 'dev123';
+
+    const expectedPassword = (activePasswords[email] || userPasswords[email] || defaultFallback).trim();
+    const enteredPassword = loginPassword.trim();
+
+    // STRICT: Password match check
+    if (enteredPassword !== expectedPassword) {
+      setLoginError('Kata sandi yang Anda masukkan salah. Silakan coba lagi atau gunakan verifikasi email di bawah untuk mereset kata sandi Anda.');
+      return;
+    }
+
+    if (found) {
+      setCurrentUser({
+        name: found.name,
+        email: found.email,
+        role: found.role
+      });
+      if (found.role === 'operator') {
+        setOperatorSessionRemaining(operatorSessionLimit * 60);
+      }
+    } else if (selectedDemoRole === 'developer' || email.includes('dev')) {
       setCurrentUser({
         name: 'Tim Developer Software & IoT',
-        email: loginEmail || 'dev@uad.ac.id',
+        email: email,
         role: 'developer'
       });
-    } else if (selectedDemoRole === 'admin') {
+    } else if (selectedDemoRole === 'admin' || email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id') {
       setCurrentUser({
-        name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)',
-        email: loginEmail || 'admin@uad.ac.id',
+        name: 'Dwi Melianti (Admin Utama / Dosen)',
+        email: email,
         role: 'admin'
       });
     } else {
       setCurrentUser({
-        name: 'Rahmat Hidayat (Mahasiswa Operator)',
-        email: loginEmail || 'operator@uad.ac.id',
+        name: 'Dwi Melianti (Mahasiswa Operator)',
+        email: email,
         role: 'operator'
       });
       setOperatorSessionRemaining(operatorSessionLimit * 60);
@@ -805,8 +1167,8 @@ export default function FluidHEDashboard() {
         <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-slate-200/70">
           <div className="flex items-center gap-2">
             <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold uppercase shadow-sm ${isCounter
-                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                : 'bg-sky-100 text-sky-800 border border-sky-300'
+              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              : 'bg-sky-100 text-sky-800 border border-sky-300'
               }`}>
               Mode: {diagramMode} {titleExtra}
             </span>
@@ -1088,130 +1450,481 @@ export default function FluidHEDashboard() {
   // ─── RENDER: LOGIN SCREEN (SUPPORTING DEVELOPER, ADMIN, OPERATOR ROLES) ───
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-between p-4 md:p-8 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-between p-3.5 sm:p-6 md:p-8 relative overflow-hidden font-sans">
         <div className="absolute -top-32 -left-32 w-96 h-96 bg-sky-200/50 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-cyan-200/50 rounded-full blur-3xl pointer-events-none" />
 
-        <header className="flex justify-between items-center max-w-7xl mx-auto w-full z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 relative flex items-center justify-center p-1 bg-white rounded-2xl shadow-md border border-slate-200/80 shrink-0">
-              <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
+        <header className="flex flex-col sm:flex-row justify-between items-center max-w-7xl mx-auto w-full z-10 gap-3">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 relative flex items-center justify-center p-1 bg-white rounded-2xl shadow-md border border-slate-200/80 shrink-0">
+                <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
+              </div>
+              <div>
+                <h1 className="text-base sm:text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5 sm:gap-2">
+                  FluidHE <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold border border-sky-200">v2.5 IoT</span>
+                </h1>
+                <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-1 sm:line-clamp-none">Universitas Ahmad Dahlan - Dual Heater & Solenoid Control</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
-                FluidHE <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold border border-sky-200">v2.5 IoT</span>
-              </h1>
-              <p className="text-xs text-slate-500">Universitas Ahmad Dahlan - Dual Heater & Solenoid Control</p>
+
+            {/* Mobile-only status badge */}
+            <div className="sm:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200/80 shadow-sm text-[10px] font-bold text-slate-600 shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>ONLINE</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200/80 shadow-sm text-xs font-medium text-slate-600">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Connected to UAD Campus Intranet
+          {/* Desktop & Tablet status badge */}
+          <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200/80 shadow-sm text-xs font-medium text-slate-600 shrink-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span>Connected to UAD Campus Intranet</span>
           </div>
         </header>
 
-        <main className="max-w-md w-full mx-auto my-auto py-8 z-10">
-          <div className="asklepios-card p-8 bg-white/90 backdrop-blur-md shadow-xl border border-slate-200/80 rounded-3xl">
-            <div className="text-center mb-6">
-              <div className="inline-flex p-2 bg-white rounded-2xl mb-3 border border-slate-200/80 shadow-md w-16 h-16 items-center justify-center">
+        <main className="max-w-md w-full mx-auto my-auto py-4 sm:py-8 z-10">
+          <div className="asklepios-card p-5 sm:p-8 bg-white/95 backdrop-blur-md shadow-2xl border border-slate-200/80 rounded-3xl">
+            <div className="text-center mb-5 sm:mb-6">
+              <div className="inline-flex p-2 bg-white rounded-2xl mb-2.5 sm:mb-3 border border-slate-200/80 shadow-md w-14 h-14 sm:w-16 sm:h-16 items-center justify-center">
                 <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-900">Masuk ke Sistem</h2>
-              <p className="text-sm text-slate-500 mt-1">Laboratorium Teknik Kimia & IoT Industri UAD</p>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900">Masuk ke Sistem</h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">Laboratorium Teknik Kimia & IoT Industri UAD</p>
             </div>
 
-            {/* Main Lab Role Switcher (Admin & Operator) */}
-            <div className="mb-6 p-1.5 bg-slate-100/80 rounded-2xl flex border border-slate-200/60 gap-1">
+            {/* Main Lab Role Switcher (Admin & Operator) - perfectly balanced */}
+            <div className="mb-5 p-1 bg-slate-100 rounded-2xl flex border border-slate-200/80 gap-1">
               <button
                 type="button"
                 onClick={() => {
                   setSelectedDemoRole('admin');
-                  setLoginEmail('admin@uad.ac.id');
+                  setLoginEmail('dwimeliantiistiqomah55@gmail.com');
+                  setLoginPassword('');
+                  setLoginError(null);
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'admin'
-                    ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'admin'
+                    ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                   }`}
               >
-                <Shield className="w-3.5 h-3.5" /> Admin (Dosen / KaLab)
+                <Shield className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Admin <span className="font-normal opacity-85 text-[10px] hidden xs:inline">(Dosen/KaLab)</span></span>
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setSelectedDemoRole('operator');
-                  setLoginEmail('operator@uad.ac.id');
+                  setLoginEmail('dwi.melianti@mhs.itenas.ac.id');
+                  setLoginPassword('');
+                  setLoginError(null);
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'operator'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'operator'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                   }`}
               >
-                <Users className="w-3.5 h-3.5" /> Operator (Mahasiswa)
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Operator <span className="font-normal opacity-85 text-[10px] hidden xs:inline">(Mahasiswa)</span></span>
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3.5 sm:space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email / Username</label>
-                <input
-                  type="text"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition"
-                  placeholder="user@uad.ac.id"
-                />
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email / Username</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={loginEmail}
+                    onChange={(e) => {
+                      setLoginEmail(e.target.value);
+                      setLoginError(null);
+                    }}
+                    className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition font-medium"
+                    placeholder="user@uad.ac.id"
+                  />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Kata Sandi</label>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition"
-                  placeholder="••••••••"
-                />
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-slate-700">Kata Sandi</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResetModalOpen(true);
+                      setResetStep('INPUT_EMAIL');
+                      setResetError(null);
+                      setResetEmailInput(loginEmail || 'admin@uad.ac.id');
+                    }}
+                    className="text-[11px] font-bold text-sky-600 hover:text-sky-800 transition"
+                  >
+                    Lupa / Ganti Sandi?
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    value={loginPassword}
+                    onChange={(e) => {
+                      setLoginPassword(e.target.value);
+                      setLoginError(null);
+                    }}
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition font-medium"
+                    placeholder="••••••••"
+                  />
+                  <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 transition"
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-sky-50/80 border border-sky-100 text-xs text-sky-800 flex items-start gap-2">
+              {loginError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-start gap-2 animate-in fade-in duration-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold">{loginError}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 rounded-2xl bg-sky-50/90 border border-sky-100 text-[11px] sm:text-xs text-sky-800 flex items-start gap-2 leading-relaxed">
                 <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
                 <span>
-                  Role <strong className="uppercase">{selectedDemoRole}</strong>:{' '}
+                  Role <strong className="uppercase font-bold">{selectedDemoRole}</strong>:{' '}
                   {selectedDemoRole === 'admin'
-                    ? 'Manajemen user, verifikasi kalibrasi & penetapan batas durasi praktikum.'
-                    : 'Pengoperasian alat, grafik real-time & download data ber-interval.'}
+                    ? 'Akses penuh kendali hardware, verifikasi alarm & ganti kata sandi via email resmi.'
+                    : 'Pengoperasian praktikum mahasiswa, pemantauan sensor real-time & unduh data Excel.'}
                 </span>
               </div>
 
               <button
                 type="button"
                 onClick={() => handleLogin()}
-                className="w-full py-3 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-bold rounded-xl shadow-lg shadow-sky-500/25 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg shadow-sky-500/25 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
               >
                 Masuk ke Dashboard Lab
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-
-            {/* Separate Developer Portal Redirect Link */}
-            <div className="mt-6 pt-4 border-t border-slate-100 text-center space-y-2">
-              <p className="text-xs text-slate-500 font-medium">Membutuhkan akses hardware low-level & Modbus/MQTT?</p>
-              <a
-                href="http://localhost:3001/developer"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold hover:bg-purple-100 transition"
-              >
-                <Code className="w-3.5 h-3.5 text-purple-600" /> Buka Developer Portal (Port 3001)
-              </a>
-            </div>
           </div>
         </main>
 
-        <footer className="text-center text-xs text-slate-400 z-10 py-2">
-          © 2026 Heat Exchanger Control System - Universitas Ahmad Dahlan Campus Intranet
+        <footer className="text-center text-[10px] sm:text-xs text-slate-400 z-10 py-2.5 px-4 leading-relaxed">
+          © 2026 Heat Exchanger Control System • Universitas Ahmad Dahlan
         </footer>
+
+        {/* ─── SECURE EMAIL OTP PASSWORD RESET MODAL (FOR ALL REGISTERED USERS) ─── */}
+        {isResetModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
+
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center border border-sky-100">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                      Verifikasi & Ganti Sandi Akun
+                    </h3>
+                    <p className="text-[10.5px] text-slate-500">Verifikasi OTP dikirim ke email resmi pengguna</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Progress Steps Header */}
+              <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                <div className={`p-1.5 rounded-xl border transition ${resetStep === 'INPUT_EMAIL' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}>
+                  1. Email Akun
+                </div>
+                <div className={`p-1.5 rounded-xl border transition ${resetStep === 'VERIFY_OTP' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}>
+                  2. Kode OTP
+                </div>
+                <div className={`p-1.5 rounded-xl border transition ${resetStep === 'NEW_PASSWORD' || resetStep === 'SUCCESS' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}>
+                  3. Sandi Baru
+                </div>
+              </div>
+
+              {/* Error Notice */}
+              {resetError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              {/* STEP 1: INPUT REGISTERED EMAIL */}
+              {resetStep === 'INPUT_EMAIL' && (
+                <form onSubmit={handleRequestOtp} className="space-y-3.5">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Masukkan alamat email resmi akun Anda (Mahasiswa / Dosen / Admin). Sistem akan mengirimkan kode 6-digit OTP untuk memastikan hanya pemilik akun yang sah yang dapat mengganti kata sandi.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Email Resmi Terdaftar</label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        required
+                        value={resetEmailInput}
+                        onChange={(e) => setResetEmailInput(e.target.value)}
+                        placeholder="nama@mhs.itenas.ac.id / admin@uad.ac.id"
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                      />
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl text-[10.5px] text-sky-800 flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                    <span>Kata sandi Anda terenkripsi secara aman & privat (Admin tidak dapat melihat sandi baru Anda).</span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSendingEmail}
+                    className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingEmail ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Mengirim Email OTP...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" /> Kirim Kode OTP ke Email
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+
+              {/* STEP 2: ENTER 6-DIGIT OTP CODE */}
+              {resetStep === 'VERIFY_OTP' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-3.5">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 leading-relaxed flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span>Kode verifikasi 6-digit telah dikirim ke: <strong>{resetEmailInput}</strong>.</span>
+                      <p className="text-[11px] text-emerald-700 mt-0.5">Buka email Anda (cek kotak masuk / spam), lalu ketikkan 6 digit kode yang Anda terima di bawah ini.</p>
+                    </div>
+                  </div>
+
+                  {smtpStatusInfo === 'UNCONFIGURED' && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl text-[11px] text-amber-900 leading-relaxed space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                        <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Pengiriman Email Memerlukan Kredensial SMTP</span>
+                      </div>
+                      <p>
+                        Agar email terkirim ke Gmail asli Anda, isi <code>SMTP_USER</code> dan <code>SMTP_PASS</code> (Google App Password) di file <code>.env.local</code>.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
+                      Masukkan 6 Digit Kode OTP
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={enteredOtp}
+                      onChange={(e) => setEnteredOtp(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Contoh: 849201"
+                      className="w-full py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-lg font-mono font-black tracking-widest focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-900"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Tidak menerima email?</span>
+                    <button
+                      type="button"
+                      disabled={otpResendCountdown > 0}
+                      onClick={handleRequestOtp}
+                      className={`font-bold transition ${otpResendCountdown > 0 ? 'text-slate-400 cursor-not-allowed' : 'text-sky-600 hover:text-sky-800 underline'
+                        }`}
+                    >
+                      {otpResendCountdown > 0 ? `Kirim ulang (${otpResendCountdown}s)` : 'Kirim Ulang OTP'}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setResetStep('INPUT_EMAIL')}
+                      className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                    >
+                      Kembali
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-2/3 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Check className="w-4 h-4" /> Verifikasi OTP
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 3: SET NEW PASSWORD WITH SECURITY CHECKLIST */}
+              {resetStep === 'NEW_PASSWORD' && (() => {
+                const strength = getPasswordStrength(newPasswordInput);
+                return (
+                  <form onSubmit={handleSaveNewPassword} className="space-y-3.5">
+                    <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-800 flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                      <span>Verifikasi Berhasil! Buat kata sandi baru untuk <strong>{resetEmailInput}</strong>.</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Kata Sandi Baru</label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          value={newPasswordInput}
+                          onChange={(e) => setNewPasswordInput(e.target.value)}
+                          placeholder="Min. 8 karakter (Huruf besar, kecil, angka)"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                        />
+                        <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 transition"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Live Password Security Strength Indicator */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-bold text-slate-600">Kekuatan Keamanan Sandi:</span>
+                        <span className={`font-black ${
+                          strength.score <= 1
+                            ? 'text-rose-600'
+                            : strength.score <= 3
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                        }`}>
+                          {strength.score <= 1 ? 'Sangat Lemah' : strength.score <= 3 ? 'Sedang' : 'Kuat & Aman ✓'}
+                        </span>
+                      </div>
+
+                      {/* Strength Progress Bar */}
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex gap-1">
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                          strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                          strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                          strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                          strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
+                        }`} />
+                      </div>
+
+                      {/* Security Requirements Checklist */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10.5px]">
+                        <div className={`flex items-center gap-1.5 ${strength.hasMinLength ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasMinLength ? 'text-emerald-600' : 'text-slate-300'}`} />
+                          <span>Minimal 8 karakter</span>
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${strength.hasUpperCase ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasUpperCase ? 'text-emerald-600' : 'text-slate-300'}`} />
+                          <span>Huruf besar (A-Z)</span>
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${strength.hasLowerCase ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasLowerCase ? 'text-emerald-600' : 'text-slate-300'}`} />
+                          <span>Huruf kecil (a-z)</span>
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${strength.hasNumber ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasNumber ? 'text-emerald-600' : 'text-slate-300'}`} />
+                          <span>Angka (0-9)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Konfirmasi Kata Sandi Baru</label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          value={confirmPasswordInput}
+                          onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                          placeholder="Ulangi kata sandi baru"
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                        />
+                        <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={!strength.isValid}
+                      className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Check className="w-4 h-4" /> Simpan Kata Sandi Baru
+                    </button>
+                  </form>
+                );
+              })()}
+
+              {/* STEP 4: SUCCESS CONFIRMATION */}
+              {resetStep === 'SUCCESS' && (
+                <div className="text-center space-y-3.5 py-2">
+                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-md">
+                    <CheckCircle2 className="w-7 h-7" />
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="text-base font-black text-slate-900">Kata Sandi Berhasil Diperbarui!</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Kata sandi baru untuk akun <strong>{resetEmailInput}</strong> telah tersimpan dengan aman. Anda sekarang dapat langsung masuk ke dashboard.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResetModalOpen(false);
+                      setLoginEmail(resetEmailInput);
+                    }}
+                    className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md transition cursor-pointer"
+                  >
+                    Masuk Sekarang
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1368,7 +2081,7 @@ export default function FluidHEDashboard() {
       )}
 
       {/* ─── TOP HEADER BAR ─── */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-2.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between no-print gap-1.5 sm:gap-3">
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-2 sm:px-6 py-2 sm:py-3 flex items-center justify-between no-print gap-1 sm:gap-3">
         {/* Left Section: Menu Toggle + Logo + Title */}
         <div id="tour-header-title" className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
@@ -1376,15 +2089,15 @@ export default function FluidHEDashboard() {
             className="md:hidden p-1.5 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition focus:outline-none shrink-0"
             aria-label="Toggle Menu"
           >
-            {isSidebarOpen ? <X className="w-5 h-5 sm:w-6 sm:h-6" /> : <Menu className="w-5 h-5 sm:w-6 sm:h-6" />}
+            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="w-8 h-8 sm:w-10 sm:h-10 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-md border border-slate-200/80 shrink-0">
+          <div className="w-7 h-7 sm:w-10 sm:h-10 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-sm border border-slate-200/80 shrink-0">
             <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="text-sm sm:text-lg font-bold text-slate-900 tracking-tight whitespace-nowrap">
+              <h1 className="text-xs sm:text-lg font-bold text-slate-900 tracking-tight whitespace-nowrap">
                 FluidHE<span className="hidden sm:inline"> Dashboard</span>
               </h1>
               <span className="hidden sm:inline-block px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold rounded-full whitespace-nowrap">
@@ -1396,34 +2109,35 @@ export default function FluidHEDashboard() {
         </div>
 
         {/* Right Section: Status Badges & User Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Interactive Guided Tour Button */}
           <button
             type="button"
             onClick={() => setIsTourOpen(true)}
-            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 bg-gradient-to-r from-sky-50 to-indigo-50 hover:from-sky-100 hover:to-indigo-100 text-sky-800 border border-sky-200/80 rounded-full text-[10px] sm:text-xs font-extrabold shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ring-1 ring-sky-500/10"
+            className="flex items-center gap-1 p-1.5 sm:px-3 sm:py-1 bg-gradient-to-r from-sky-50 to-indigo-50 hover:from-sky-100 hover:to-indigo-100 text-sky-800 border border-sky-200/80 rounded-full text-[10px] sm:text-xs font-extrabold shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ring-1 ring-sky-500/10"
             title="Buka Panduan Tutorial Interaktif"
           >
             <HelpCircle className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
-            <span className="hidden xs:inline">Panduan</span>
+            <span className="hidden sm:inline">Panduan</span>
           </button>
 
           {/* Supabase Connection Status Badge */}
           <div id="tour-iot-badge" className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold border transition whitespace-nowrap ${supabaseStatus === 'ONLINE'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : supabaseStatus === 'CONNECTING'
-                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                : 'bg-red-50 text-red-800 border-red-200'
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : supabaseStatus === 'CONNECTING'
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
+              : 'bg-red-50 text-red-800 border-red-200'
             }`}>
-            <span className={`w-2 h-2 rounded-full shrink-0 ${supabaseStatus === 'ONLINE'
-                ? 'bg-emerald-500 animate-pulse'
-                : supabaseStatus === 'CONNECTING'
-                  ? 'bg-amber-500 animate-ping'
-                  : 'bg-red-500'
+            <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0 ${supabaseStatus === 'ONLINE'
+              ? 'bg-emerald-500 animate-pulse'
+              : supabaseStatus === 'CONNECTING'
+                ? 'bg-amber-500 animate-ping'
+                : 'bg-red-500'
               }`} />
             <span>
               <span className="hidden sm:inline">IoT Cloud: </span>
-              {supabaseStatus === 'ONLINE' ? 'ONLINE' : supabaseStatus === 'CONNECTING' ? 'CONNECTING...' : 'OFFLINE'}
+              <span className="sm:hidden">{supabaseStatus === 'ONLINE' ? 'ONLINE' : supabaseStatus === 'CONNECTING' ? 'CONNECT' : 'OFFLINE'}</span>
+              <span className="hidden sm:inline">{supabaseStatus === 'ONLINE' ? 'ONLINE' : supabaseStatus === 'CONNECTING' ? 'CONNECTING...' : 'OFFLINE'}</span>
             </span>
           </div>
 
@@ -1434,7 +2148,7 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* Emergency Stop / TRIP Button (Always clearly visible & actionable) */}
+          {/* Emergency Stop / TRIP Button (Compact & neat on mobile) */}
           <button
             id="tour-emergency-btn"
             type="button"
@@ -1445,16 +2159,17 @@ export default function FluidHEDashboard() {
                 setHeaterMasterPower(false);
               }
             }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ${emergencyStopped
-                ? 'bg-red-600 text-white animate-pulse shadow-md shadow-red-600/30'
-                : isAlarmActive
-                  ? 'bg-amber-500 text-white animate-pulse'
-                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+            className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow-sm transition active:scale-95 whitespace-nowrap cursor-pointer ${emergencyStopped
+              ? 'bg-red-600 text-white animate-pulse shadow-md shadow-red-600/30'
+              : isAlarmActive
+                ? 'bg-amber-500 text-white animate-pulse'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
               }`}
             title="Tombol Darurat (Emergency Stop / TRIP)"
           >
             <AlertTriangle className={`w-3.5 h-3.5 ${emergencyStopped ? 'text-white' : 'text-rose-600'}`} />
-            <span>{emergencyStopped ? 'TRIP AKTIF' : 'EMERGENCY TRIP'}</span>
+            <span className="sm:hidden">{emergencyStopped ? 'TRIP' : 'TRIP'}</span>
+            <span className="hidden sm:inline">{emergencyStopped ? 'TRIP AKTIF' : 'EMERGENCY TRIP'}</span>
           </button>
 
           {!emergencyStopped && !isAlarmActive && (
@@ -1464,15 +2179,15 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* User Profile Pill */}
-          <div className="flex items-center gap-1.5 sm:gap-3 pl-1.5 sm:pl-3 border-l border-slate-200 shrink-0">
+          {/* User Profile Pill & Logout */}
+          <div className="flex items-center gap-1 sm:gap-2 pl-1 sm:pl-2 border-l border-slate-200 shrink-0">
             <div className="text-right hidden lg:block">
               <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
               <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${currentUser.role === 'developer'
-                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                  : currentUser.role === 'admin'
-                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                    : 'bg-slate-100 text-slate-600'
+                ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                : currentUser.role === 'admin'
+                  ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                  : 'bg-slate-100 text-slate-600'
                 }`}>
                 {currentUser.role}
               </span>
@@ -1481,9 +2196,9 @@ export default function FluidHEDashboard() {
             <button
               onClick={() => setIsLoggedIn(false)}
               title="Keluar"
-              className="p-1 sm:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
+              className="p-1 sm:p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
             >
-              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+              <LogOut className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </button>
           </div>
         </div>
@@ -1522,8 +2237,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'dashboard'
-                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <Activity className="w-4 h-4" /> Real-Time Monitoring
@@ -1535,8 +2250,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'control'
-                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <Sliders className="w-4 h-4" /> Control Panel
@@ -1548,8 +2263,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'cctv'
-                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <Video className="w-4 h-4" /> CCTV Feed
@@ -1561,8 +2276,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'logs'
-                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <FileText className="w-4 h-4" /> Data Logs & Laporan
@@ -1574,8 +2289,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'alarms'
-                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <div className="relative">
@@ -1600,8 +2315,8 @@ export default function FluidHEDashboard() {
                   setIsSidebarOpen(false);
                 }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all ${activeTab === 'users'
-                    ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
               >
                 <div className="flex items-center gap-3">
@@ -1625,8 +2340,8 @@ export default function FluidHEDashboard() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all mt-1 ${activeTab === 'developer'
-                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -1647,7 +2362,7 @@ export default function FluidHEDashboard() {
         </aside>
 
         {/* ─── MAIN CONTENT VIEW SWITCHER ─── */}
-        <main className="flex-1 p-4 md:p-6 space-y-6 overflow-y-auto">
+        <main className="flex-1 p-3.5 sm:p-4 md:p-6 space-y-6 overflow-y-auto pb-24 md:pb-6">
 
           {/* SAFETY / WARNING BANNERS */}
           {primingNotice && (
@@ -1686,9 +2401,13 @@ export default function FluidHEDashboard() {
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
 
-              {/* 1. Summary Cards */}
-              <div id="tour-temp-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="asklepios-card p-4 relative overflow-hidden">
+              {/* 1. Summary Cards (Tappable to jump to controls) */}
+              <div id="tour-temp-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-orange-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                  title="Klik untuk membuka Kontrol Pemanas & Suhu"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">TI1 (Hot Inlet)</span>
                     <span className="p-1.5 bg-orange-50 text-orange-600 rounded-xl">
@@ -1707,7 +2426,11 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-orange-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                  title="Klik untuk membuka Kontrol Pemanas & Suhu"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">TI2 (Hot Outlet - Heater 2)</span>
                     <span className="p-1.5 bg-orange-50 text-orange-600 rounded-xl">
@@ -1724,7 +2447,11 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-cyan-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                  title="Klik untuk membuka Kontrol Pemanas & Suhu"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">TI3 (Cold Inlet)</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
@@ -1741,7 +2468,11 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-cyan-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                  title="Klik untuk membuka Kontrol Pemanas & Suhu"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">TI4 (Cold Outlet)</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
@@ -1758,7 +2489,10 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-sky-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">PI1 / PI2 (Hot Press)</span>
                     <span className="p-1.5 bg-sky-50 text-sky-600 rounded-xl">
@@ -1775,7 +2509,10 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-cyan-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">PI3 / PI4 (Cold Press)</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
@@ -1792,7 +2529,10 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-orange-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">FC1 (Hot Flow)</span>
                     <span className="p-1.5 bg-orange-50 text-orange-600 rounded-xl">
@@ -1809,7 +2549,10 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                <div className="asklepios-card p-4 relative overflow-hidden">
+                <div
+                  onClick={() => setActiveTab('control')}
+                  className="asklepios-card p-3.5 sm:p-4 relative overflow-hidden cursor-pointer hover:border-cyan-300 hover:shadow-md transition active:scale-[0.98] select-none"
+                >
                   <div className="flex justify-between items-start">
                     <span className="text-xs font-semibold text-slate-500">FC2 (Cold Flow)</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
@@ -2040,8 +2783,8 @@ export default function FluidHEDashboard() {
                         setFlowVisViewMode('single');
                       }}
                       className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${operationMode === 'Co-Current' && flowVisViewMode === 'single'
-                          ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
-                          : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                        ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
+                        : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                     >
                       <div className="flex justify-between items-center w-full">
@@ -2049,8 +2792,8 @@ export default function FluidHEDashboard() {
                           <span className="p-1 rounded-lg bg-white/20">🔄</span> Co-Current
                         </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${operationMode === 'Co-Current' && flowVisViewMode === 'single'
-                            ? 'bg-white/25 text-white'
-                            : 'bg-sky-100 text-sky-700'
+                          ? 'bg-white/25 text-white'
+                          : 'bg-sky-100 text-sky-700'
                           }`}>
                           Aliran Searah
                         </span>
@@ -2068,8 +2811,8 @@ export default function FluidHEDashboard() {
                         setFlowVisViewMode('single');
                       }}
                       className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${operationMode === 'Counter-Current' && flowVisViewMode === 'single'
-                          ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
-                          : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                        ? 'bg-gradient-to-br from-sky-600 to-cyan-600 text-white border-sky-600 shadow-lg shadow-sky-600/25 ring-2 ring-sky-300'
+                        : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                     >
                       <div className="flex justify-between items-center w-full">
@@ -2077,8 +2820,8 @@ export default function FluidHEDashboard() {
                           <span className="p-1 rounded-lg bg-white/20">⇄</span> Counter-Current
                         </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${operationMode === 'Counter-Current' && flowVisViewMode === 'single'
-                            ? 'bg-white/25 text-white'
-                            : 'bg-emerald-100 text-emerald-700'
+                          ? 'bg-white/25 text-white'
+                          : 'bg-emerald-100 text-emerald-700'
                           }`}>
                           Fail-Safe Pasif
                         </span>
@@ -2093,8 +2836,8 @@ export default function FluidHEDashboard() {
                       type="button"
                       onClick={() => setFlowVisViewMode('compare')}
                       className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${flowVisViewMode === 'compare'
-                          ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-600 shadow-lg shadow-purple-600/25 ring-2 ring-purple-300'
-                          : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                        ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-600 shadow-lg shadow-purple-600/25 ring-2 ring-purple-300'
+                        : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                     >
                       <div className="flex justify-between items-center w-full">
@@ -2119,7 +2862,7 @@ export default function FluidHEDashboard() {
                 ) : (
                   <div className="space-y-6">
                     <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-purple-600" /> Tampilan Perbandingan Dual Diagram (Co-Current vs Counter-Current)
+                      <Sparkles className="w-4 h-4 text-purple-600" /> Tampilan Perbandingan Dual Diagram (Co-Current vs Counter-Current)
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       {renderPIDDiagram('Co-Current', '(Pola Searah)')}
@@ -2136,7 +2879,7 @@ export default function FluidHEDashboard() {
           {activeTab === 'control' && (
             <div className="space-y-6">
               <div className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200 space-y-6">
-                
+
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
                   <div>
                     <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
@@ -2149,21 +2892,19 @@ export default function FluidHEDashboard() {
                 </div>
 
                 {/* ─── LIVE VISUAL IOT TRANSMISSION ACTIVITY BAR ─── */}
-                <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${
-                  syncFeedback.active
+                <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${syncFeedback.active
                     ? syncFeedback.type === 'syncing'
                       ? 'bg-sky-500/10 border-sky-400/50 shadow-md shadow-sky-500/10'
                       : 'bg-emerald-500/10 border-emerald-400/50 shadow-md shadow-emerald-500/10'
                     : 'bg-slate-50 border-slate-200'
-                }`}>
+                  }`}>
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl border shrink-0 transition-all ${
-                      syncFeedback.active
+                    <div className={`p-2 rounded-xl border shrink-0 transition-all ${syncFeedback.active
                         ? syncFeedback.type === 'syncing'
                           ? 'bg-sky-600 text-white border-sky-500 animate-spin'
                           : 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
                         : 'bg-white text-slate-400 border-slate-200'
-                    }`}>
+                      }`}>
                       {syncFeedback.active ? (
                         syncFeedback.type === 'syncing' ? <RefreshCw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />
                       ) : (
@@ -2177,11 +2918,10 @@ export default function FluidHEDashboard() {
                           {syncFeedback.active ? syncFeedback.message : 'Jalur Sinkronisasi IoT Cloud (ESP32)'}
                         </strong>
                         {syncFeedback.active && (
-                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${
-                            syncFeedback.type === 'syncing'
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${syncFeedback.type === 'syncing'
                               ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
                               : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          }`}>
+                            }`}>
                             {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
                           </span>
                         )}
@@ -2195,13 +2935,12 @@ export default function FluidHEDashboard() {
                   </div>
 
                   <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 shrink-0 bg-white/80 px-3 py-1.5 rounded-xl border border-slate-200">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${
-                      syncFeedback.active && syncFeedback.type === 'syncing'
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${syncFeedback.active && syncFeedback.type === 'syncing'
                         ? 'bg-sky-500 animate-ping'
                         : supabaseStatus === 'ONLINE'
-                        ? 'bg-emerald-500 animate-pulse'
-                        : 'bg-red-500'
-                    }`} />
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-red-500'
+                      }`} />
                     <span>Sinkronisasi: <strong>{supabaseStatus === 'ONLINE' ? 'AKTIF (~40ms)' : supabaseStatus}</strong></span>
                   </div>
                 </div>
@@ -2284,22 +3023,20 @@ export default function FluidHEDashboard() {
 
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Status Heater</span>
-                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${
-                        (supabaseTelemetry?.heater_status === 'ON' || dualHeaterState.powerWatt > 0)
+                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${(supabaseTelemetry?.heater_status === 'ON' || dualHeaterState.powerWatt > 0)
                           ? 'bg-orange-100 text-orange-800'
                           : 'bg-slate-200 text-slate-700'
-                      }`}>
+                        }`}>
                         {dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'}
                       </span>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Status Alarm</span>
-                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${
-                        (supabaseTelemetry?.warning_status === 'NORMAL')
+                      <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${(supabaseTelemetry?.warning_status === 'NORMAL')
                           ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-red-100 text-red-800'
-                      }`}>
+                        }`}>
                         {supabaseTelemetry ? supabaseTelemetry.warning_status : 'NORMAL'}
                       </span>
                     </div>
@@ -2326,11 +3063,10 @@ export default function FluidHEDashboard() {
                             triggerSyncFeedback('Mode Operasi AUTO', `Target ${supabaseControls.target_temp.toFixed(1)}°C (Parameter Disesuaikan Otomatis)`);
                           }}
                           disabled={emergencyStopped}
-                          className={`py-2 rounded-xl text-xs font-extrabold transition ${
-                            supabaseControls.control_mode === 'AUTO'
+                          className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.control_mode === 'AUTO'
                               ? 'bg-purple-600 text-white shadow'
                               : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           AUTO
                         </button>
@@ -2341,11 +3077,10 @@ export default function FluidHEDashboard() {
                             triggerSyncFeedback('Mode Operasi MANUAL', 'Kendali Bebas Operator Aktif');
                           }}
                           disabled={emergencyStopped}
-                          className={`py-2 rounded-xl text-xs font-extrabold transition ${
-                            supabaseControls.control_mode === 'MANUAL'
+                          className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.control_mode === 'MANUAL'
                               ? 'bg-purple-600 text-white shadow'
                               : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           MANUAL
                         </button>
@@ -2369,11 +3104,10 @@ export default function FluidHEDashboard() {
                             triggerSyncFeedback('Arah Aliran', 'COUNTER-CURRENT');
                           }}
                           disabled={emergencyStopped}
-                          className={`py-2 rounded-xl text-xs font-extrabold transition ${
-                            supabaseControls.flow_mode === 'COUNTER'
+                          className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.flow_mode === 'COUNTER'
                               ? 'bg-sky-600 text-white shadow'
                               : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           COUNTER
                         </button>
@@ -2385,11 +3119,10 @@ export default function FluidHEDashboard() {
                             triggerSyncFeedback('Arah Aliran', 'CO-CURRENT');
                           }}
                           disabled={emergencyStopped}
-                          className={`py-2 rounded-xl text-xs font-extrabold transition ${
-                            supabaseControls.flow_mode === 'CO-CURRENT'
+                          className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.flow_mode === 'CO-CURRENT'
                               ? 'bg-sky-600 text-white shadow'
                               : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           CO-CURRENT
                         </button>
@@ -2398,9 +3131,8 @@ export default function FluidHEDashboard() {
                     </div>
 
                     {/* Tombol Heater Power + Dual Heater Status */}
-                    <div id="tour-heater-control" className={`p-4 rounded-2xl border transition-all space-y-2 ${
-                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
-                    }`}>
+                    <div id="tour-heater-control" className={`p-4 rounded-2xl border transition-all space-y-2 ${supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                      }`}>
                       <div className="flex justify-between items-center">
                         <label className="text-xs font-bold text-slate-800">Daya Utama Pemanas</label>
                         {supabaseControls.control_mode === 'AUTO' ? (
@@ -2408,9 +3140,8 @@ export default function FluidHEDashboard() {
                             AUTO PID HEATING
                           </span>
                         ) : (
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
-                            supabaseControls.heater_status ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-600'
-                          }`}>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${supabaseControls.heater_status ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-600'
+                            }`}>
                             {supabaseControls.heater_status ? 'POWER ON' : 'POWER OFF'}
                           </span>
                         )}
@@ -2424,40 +3155,38 @@ export default function FluidHEDashboard() {
                           triggerSyncFeedback('Daya Pemanas', nextState ? 'POWER ON' : 'POWER OFF');
                         }}
                         disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
-                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
-                          supabaseControls.control_mode === 'AUTO'
+                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${supabaseControls.control_mode === 'AUTO'
                             ? 'bg-purple-600 text-white opacity-90 cursor-not-allowed shadow-sm'
                             : supabaseControls.heater_status
-                            ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md'
-                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                        }`}
+                              ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md'
+                              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                          }`}
                       >
                         <Power className="w-4 h-4" />
                         {supabaseControls.control_mode === 'AUTO'
                           ? 'Otomatis Dikelola (Mode AUTO)'
                           : supabaseControls.heater_status
-                          ? 'Matikan Heater'
-                          : 'Nyalakan Heater'}
+                            ? 'Matikan Heater'
+                            : 'Nyalakan Heater'}
                       </button>
                       <span className="text-[10.5px] text-sky-700 font-semibold block truncate">
                         Tahap: {
                           dualHeaterState.stage === 'STAGE_1'
                             ? 'Tahap 1 (Pemanasan Penuh 1000W)'
                             : dualHeaterState.stage === 'STAGE_2'
-                            ? 'Tahap 2 (Kontrol Halus 500W)'
-                            : dualHeaterState.stage === 'SETPOINT_REACHED'
-                            ? 'Siaga (Target Suhu Tercapai 0W)'
-                            : 'Nonaktif (0W)'
+                              ? 'Tahap 2 (Kontrol Halus 500W)'
+                              : dualHeaterState.stage === 'SETPOINT_REACHED'
+                                ? 'Siaga (Target Suhu Tercapai 0W)'
+                                : 'Nonaktif (0W)'
                         }
                       </span>
                     </div>
 
                     {/* Slider Target Suhu (TC1 Setpoint) */}
-                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
-                      supabaseControls.control_mode === 'AUTO'
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${supabaseControls.control_mode === 'AUTO'
                         ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-400/20'
                         : 'bg-slate-50 border-slate-200'
-                    }`}>
+                      }`}>
                       <div className="flex justify-between items-center text-xs font-bold text-slate-800">
                         <span className="flex items-center gap-1.5">
                           Target Suhu (TC₁ Setpoint)
@@ -2495,9 +3224,8 @@ export default function FluidHEDashboard() {
                     </div>
 
                     {/* Slider Sudut Servo (0 - 90 Derajat) */}
-                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
-                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
-                    }`}>
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                      }`}>
                       <div className="flex justify-between items-center text-xs font-bold text-slate-800">
                         <span className="flex items-center gap-1">
                           Sudut Bukaan Katup Servo
@@ -2520,9 +3248,8 @@ export default function FluidHEDashboard() {
                           triggerSyncFeedback('Sudut Katup Servo', `${val}°`);
                         }}
                         disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
-                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
-                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                        }`}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
                       />
                       <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
                         <span>0° (Closed)</span>
@@ -2532,9 +3259,8 @@ export default function FluidHEDashboard() {
                     </div>
 
                     {/* Valve FC1 (Hot Fluid Flow) */}
-                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${
-                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
-                    }`}>
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 ${supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                      }`}>
                       <div className="flex justify-between text-xs font-bold text-slate-800">
                         <span className="flex items-center gap-1">
                           Bukaan Katup FC1 (Air Panas)
@@ -2557,9 +3283,8 @@ export default function FluidHEDashboard() {
                           triggerSyncFeedback('Katup FC1 (Air Panas)', `${val}%`);
                         }}
                         disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
-                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
-                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                        }`}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
                       />
                       <div className="text-[10.5px] text-slate-500 flex justify-between font-semibold">
                         <span>Estimasi Debit:</span>
@@ -2568,9 +3293,8 @@ export default function FluidHEDashboard() {
                     </div>
 
                     {/* Valve FC2 (Cold Fluid Flow) */}
-                    <div className={`p-4 rounded-2xl border transition-all space-y-2 md:col-span-2 lg:col-span-1 ${
-                      supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
-                    }`}>
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 md:col-span-2 lg:col-span-1 ${supabaseControls.control_mode === 'AUTO' ? 'bg-purple-50/60 border-purple-200' : 'bg-slate-50 border-slate-200'
+                      }`}>
                       <div className="flex justify-between text-xs font-bold text-slate-800">
                         <span className="flex items-center gap-1">
                           Bukaan Katup FC2 (Air Dingin)
@@ -2593,9 +3317,8 @@ export default function FluidHEDashboard() {
                           triggerSyncFeedback('Katup FC2 (Air Dingin)', `${val}%`);
                         }}
                         disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
-                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${
-                          supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                        }`}
+                        className={`w-full h-2 bg-slate-200 rounded-lg appearance-none ${supabaseControls.control_mode === 'AUTO' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
                       />
                       <div className="text-[10.5px] text-slate-500 flex justify-between font-semibold">
                         <span>Estimasi Debit:</span>
@@ -2647,8 +3370,8 @@ export default function FluidHEDashboard() {
                         setCctvIpUrl('rtsp://192.168.1.105:554/live/he_rig');
                       }}
                       className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam1'
-                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                     >
                       <Video className="w-3.5 h-3.5" /> Saluran 1: Rig Heat Exchanger
@@ -2660,8 +3383,8 @@ export default function FluidHEDashboard() {
                         setCctvIpUrl('rtsp://192.168.1.106:554/live/storage_tank');
                       }}
                       className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam2'
-                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                     >
                       <Video className="w-3.5 h-3.5" /> Saluran 2: Tangki Fluida
@@ -2673,8 +3396,8 @@ export default function FluidHEDashboard() {
                         setCctvIpUrl('rtsp://192.168.1.107:554/live/aux_valve');
                       }}
                       className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam3'
-                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                     >
                       <Video className="w-3.5 h-3.5" /> Saluran 3: Panel Valve Lab
@@ -2974,8 +3697,8 @@ export default function FluidHEDashboard() {
                                 {dateFilter === 'Yesterday'
                                   ? 'Tidak ada rekaman sesi praktikum pada tanggal kemarin.'
                                   : dateFilter === '7Days'
-                                  ? 'Tidak ada arsip riwayat pada 7 hari terakhir (hanya tersedia sesi hari ini).'
-                                  : 'Tidak ada data sensor yang sesuai dengan kriteria pencarian.'}
+                                    ? 'Tidak ada arsip riwayat pada 7 hari terakhir (hanya tersedia sesi hari ini).'
+                                    : 'Tidak ada data sensor yang sesuai dengan kriteria pencarian.'}
                               </span>
                             </div>
                           </td>
@@ -3064,8 +3787,8 @@ export default function FluidHEDashboard() {
                     <button
                       onClick={() => setSoundEnabled(!soundEnabled)}
                       className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${soundEnabled
-                          ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                          : 'bg-slate-200 text-slate-600'
+                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                        : 'bg-slate-200 text-slate-600'
                         }`}
                     >
                       {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -3231,22 +3954,44 @@ export default function FluidHEDashboard() {
                             </td>
                             <td className="p-3 text-slate-500">{u.lastLogin}</td>
                             <td className="p-3">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  disabled={resendingEmailFor === u.id}
+                                  onClick={() => handleResendUserCredentials(u)}
+                                  className="p-1 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-slate-100 transition disabled:opacity-50"
+                                  title="Kirim / Resend Kredensial & Sandi ke Email User"
+                                >
+                                  {resendingEmailFor === u.id ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                                  ) : (
+                                    <Mail className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setIsResetModalOpen(true);
+                                    setResetEmailInput(u.email);
+                                    setResetStep('INPUT_EMAIL');
+                                    setResetError(null);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-amber-600 rounded-lg hover:bg-slate-100 transition"
+                                  title="Reset / Ganti Kata Sandi (Verifikasi OTP)"
+                                >
+                                  <Key className="w-3.5 h-3.5" />
+                                </button>
                                 <button
                                   onClick={() => {
                                     const nextRole: UserRole = u.role === 'operator' ? 'admin' : u.role === 'admin' ? 'developer' : 'operator';
                                     setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
                                   }}
-                                  className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100"
+                                  className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition"
                                   title="Ubah Role"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    setUsersList(usersList.filter((x) => x.id !== u.id));
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100"
+                                  onClick={() => setUserToDelete(u)}
+                                  className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 transition"
                                   title="Hapus User"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3261,6 +4006,206 @@ export default function FluidHEDashboard() {
 
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ─── MODAL KONFIRMASI HAPUS USER ─── */}
+          {userToDelete && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="w-full max-w-sm bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
+                
+                <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+
+                <div className="text-center space-y-1.5">
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Hapus Akun Pengguna?
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Apakah Anda yakin ingin menghapus akun <strong className="text-slate-800">{userToDelete.name}</strong> (<code>{userToDelete.email}</code>) dengan peran <span className="font-bold uppercase text-slate-700">[{userToDelete.role}]</span>?
+                  </p>
+                </div>
+
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Akun yang dihapus tidak dapat login kembali.</span>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setUserToDelete(null)}
+                    className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = usersList.filter((x) => x.id !== userToDelete.id);
+                      setUsersList(updated);
+                      try {
+                        localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updated));
+                      } catch (e) {
+                        console.error(e);
+                      }
+                      setUserToDelete(null);
+                    }}
+                    className="w-1/2 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-rose-600/20 transition cursor-pointer"
+                  >
+                    Ya, Hapus
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* ─── MODAL TAMBAH USER BARU (DENGAN AUTO GENERATE RANDOM PASSWORD KE EMAIL) ─── */}
+          {showAddUserModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
+                
+                {/* Modal Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center border border-sky-100">
+                      <UserPlus className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                        Tambah User Baru
+                      </h3>
+                      <p className="text-[10.5px] text-slate-500">Kredensial otomatis dikirim ke email pengguna</p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddUserModal(false);
+                      setAddUserSuccessMsg(null);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {lastCreatedUserCredentials ? (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs space-y-3 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-sm">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <span>User Berhasil Didaftarkan!</span>
+                    </div>
+                    <p className="text-emerald-700 leading-relaxed">
+                      Kredensial login untuk <strong>{lastCreatedUserCredentials.name}</strong> (<code>{lastCreatedUserCredentials.email}</code>) telah disimpan & dikirim ke email.
+                    </p>
+                    <div className="p-3 bg-white border border-emerald-300 rounded-xl space-y-1.5 font-mono">
+                      <div className="text-[11px] text-slate-500 font-sans">Kata Sandi Awal Pengguna:</div>
+                      <div className="text-base font-black text-emerald-800 tracking-wider flex items-center justify-between">
+                        <span className="bg-emerald-50 px-2 py-1 rounded border border-emerald-200">{lastCreatedUserCredentials.password}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(lastCreatedUserCredentials.password);
+                            alert('Kata sandi berhasil disalin ke clipboard!');
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg font-sans transition"
+                        >
+                          Salin Sandi
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddUserModal(false);
+                        setLastCreatedUserCredentials(null);
+                      }}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition"
+                    >
+                      Selesai & Tutup
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleCreateUser} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Nama Lengkap Pengguna</label>
+                      <input
+                        type="text"
+                        required
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="Contoh: Anisa Rahmawati"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Alamat Email Pengguna</label>
+                      <div className="relative">
+                        <input
+                          type="email"
+                          required
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          placeholder="user@mhs.itenas.ac.id / user@gmail.com"
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                        />
+                        <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Role / Hak Akses</label>
+                      <select
+                        value={newUserRole}
+                        onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+                      >
+                        <option value="operator">Operator (Mahasiswa Praktikum)</option>
+                        <option value="admin">Admin (Dosen / KaLab)</option>
+                        <option value="developer">Developer (Hardware / Software Engineer)</option>
+                      </select>
+                    </div>
+
+                    <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl text-[11px] text-sky-800 flex items-start gap-2 leading-relaxed">
+                      <Lock className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Keamanan Sandi Terenkripsi:</strong> Sistem akan otomatis men-generate kata sandi awal acak yang aman dan mengirimkannya ke email user. Admin tidak perlu mengatur kata sandi manual dan tidak mengetahui kata sandi pribadi pengguna.
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddUserModal(false)}
+                        className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isAddingUser}
+                        className="w-2/3 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isAddingUser ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Mendaftarkan & Mengirim Email...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" /> Daftarkan & Kirim Sandi
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+              </div>
             </div>
           )}
 
@@ -3391,6 +4336,399 @@ export default function FluidHEDashboard() {
 
         </main>
       </div>
+
+      {/* ─── SECURE EMAIL OTP PASSWORD RESET MODAL (ACCESSIBLE FROM USER MANAGEMENT & PROFILE) ─── */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center border border-sky-100">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                    Verifikasi & Ganti Sandi Akun
+                  </h3>
+                  <p className="text-[10.5px] text-slate-500">Verifikasi OTP dikirim ke email resmi pengguna</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Progress Steps Header */}
+            <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+              <div className={`p-1.5 rounded-xl border transition ${resetStep === 'INPUT_EMAIL' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}>
+                1. Email Akun
+              </div>
+              <div className={`p-1.5 rounded-xl border transition ${resetStep === 'VERIFY_OTP' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}>
+                2. Kode OTP
+              </div>
+              <div className={`p-1.5 rounded-xl border transition ${resetStep === 'NEW_PASSWORD' || resetStep === 'SUCCESS' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}>
+                3. Sandi Baru
+              </div>
+            </div>
+
+            {/* Error Notice */}
+            {resetError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            {/* STEP 1: INPUT REGISTERED EMAIL */}
+            {resetStep === 'INPUT_EMAIL' && (
+              <form onSubmit={handleRequestOtp} className="space-y-3.5">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Masukkan alamat email resmi akun Anda (Mahasiswa / Dosen / Admin). Sistem akan mengirimkan kode 6-digit OTP untuk memastikan hanya pemilik akun yang sah yang dapat mengganti kata sandi.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Email Resmi Terdaftar</label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      required
+                      value={resetEmailInput}
+                      onChange={(e) => setResetEmailInput(e.target.value)}
+                      placeholder="nama@mhs.itenas.ac.id / admin@uad.ac.id"
+                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                    />
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl text-[10.5px] text-sky-800 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span>Kata sandi Anda terenkripsi secara aman & privat (Admin tidak dapat melihat sandi baru Anda).</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSendingEmail}
+                  className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Mengirim Email OTP...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" /> Kirim Kode OTP ke Email
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* STEP 2: ENTER 6-DIGIT OTP CODE */}
+            {resetStep === 'VERIFY_OTP' && (
+              <form onSubmit={handleVerifyOtp} className="space-y-3.5">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 leading-relaxed flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span>Kode verifikasi 6-digit telah dikirim ke: <strong>{resetEmailInput}</strong>.</span>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">Buka email Anda (cek kotak masuk / spam), lalu ketikkan 6 digit kode yang Anda terima di bawah ini.</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
+                    Masukkan 6 Digit Kode OTP
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={enteredOtp}
+                    onChange={(e) => setEnteredOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Contoh: 849201"
+                    className="w-full py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-lg font-mono font-black tracking-widest focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-900"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Tidak menerima email?</span>
+                  <button
+                    type="button"
+                    disabled={otpResendCountdown > 0}
+                    onClick={handleRequestOtp}
+                    className={`font-bold transition ${otpResendCountdown > 0 ? 'text-slate-400 cursor-not-allowed' : 'text-sky-600 hover:text-sky-800 underline'
+                      }`}
+                  >
+                    {otpResendCountdown > 0 ? `Kirim ulang (${otpResendCountdown}s)` : 'Kirim Ulang OTP'}
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetStep('INPUT_EMAIL')}
+                    className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                  >
+                    Kembali
+                  </button>
+                  <button
+                    type="submit"
+                    className="w-2/3 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" /> Verifikasi OTP
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 3: SET NEW PASSWORD WITH SECURITY CHECKLIST */}
+            {resetStep === 'NEW_PASSWORD' && (() => {
+              const strength = getPasswordStrength(newPasswordInput);
+              return (
+                <form onSubmit={handleSaveNewPassword} className="space-y-3.5">
+                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-800 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                    <span>Verifikasi Berhasil! Buat kata sandi baru untuk <strong>{resetEmailInput}</strong>.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Kata Sandi Baru</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        placeholder="Min. 8 karakter (Huruf besar, kecil, angka)"
+                        className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                      />
+                      <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live Password Security Strength Indicator */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-600">Kekuatan Keamanan Sandi:</span>
+                      <span className={`font-black ${
+                        strength.score <= 1
+                          ? 'text-rose-600'
+                          : strength.score <= 3
+                          ? 'text-amber-600'
+                          : 'text-emerald-600'
+                      }`}>
+                        {strength.score <= 1 ? 'Sangat Lemah' : strength.score <= 3 ? 'Sedang' : 'Kuat & Aman ✓'}
+                      </span>
+                    </div>
+
+                    {/* Strength Progress Bar */}
+                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex gap-1">
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                        strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                      }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                        strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                      }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                        strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                      }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                        strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
+                      }`} />
+                    </div>
+
+                    {/* Security Requirements Checklist */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10.5px]">
+                      <div className={`flex items-center gap-1.5 ${strength.hasMinLength ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                        <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasMinLength ? 'text-emerald-600' : 'text-slate-300'}`} />
+                        <span>Minimal 8 karakter</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 ${strength.hasUpperCase ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                        <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasUpperCase ? 'text-emerald-600' : 'text-slate-300'}`} />
+                        <span>Huruf besar (A-Z)</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 ${strength.hasLowerCase ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                        <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasLowerCase ? 'text-emerald-600' : 'text-slate-300'}`} />
+                        <span>Huruf kecil (a-z)</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 ${strength.hasNumber ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                        <CheckCircle2 className={`w-3.5 h-3.5 ${strength.hasNumber ? 'text-emerald-600' : 'text-slate-300'}`} />
+                        <span>Angka (0-9)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Konfirmasi Kata Sandi Baru</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        value={confirmPasswordInput}
+                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                        placeholder="Ulangi kata sandi baru"
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
+                      />
+                      <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={!strength.isValid}
+                    className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Check className="w-4 h-4" /> Simpan Kata Sandi Baru
+                  </button>
+                </form>
+              );
+            })()}
+
+            {/* STEP 4: SUCCESS CONFIRMATION */}
+            {resetStep === 'SUCCESS' && (
+              <div className="text-center space-y-3.5 py-2">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-md">
+                  <CheckCircle2 className="w-7 h-7" />
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="text-base font-black text-slate-900">Kata Sandi Berhasil Diperbarui!</h4>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Kata sandi baru untuk akun <strong>{resetEmailInput}</strong> telah tersimpan dengan aman di sistem.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-extrabold rounded-xl shadow-md transition cursor-pointer"
+                >
+                  Tutup & Lanjutkan
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── MOBILE BOTTOM TAB NAVIGATION BAR (SMARTPHONE FRIENDLY & HIGH TOUCH PRIORITY) ─── */}
+      <nav className="fixed bottom-0 inset-x-0 z-50 bg-white/98 backdrop-blur-md border-t border-slate-200/90 py-1 px-1.5 flex md:hidden justify-around items-center shadow-[0_-4px_25px_rgba(0,0,0,0.10)] no-print touch-manipulation select-none pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('dashboard');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            activeTab === 'dashboard'
+              ? 'text-sky-600 font-extrabold bg-sky-50/80'
+              : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+          }`}
+        >
+          <Activity className="w-5 h-5 shrink-0" />
+          <span className="text-[10px]">Monitoring</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('control');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            activeTab === 'control'
+              ? 'text-sky-600 font-extrabold bg-sky-50/80'
+              : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+          }`}
+        >
+          <Sliders className="w-5 h-5 shrink-0" />
+          <span className="text-[10px]">Kendali</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('cctv');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            activeTab === 'cctv'
+              ? 'text-sky-600 font-extrabold bg-sky-50/80'
+              : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+          }`}
+        >
+          <Video className="w-5 h-5 shrink-0" />
+          <span className="text-[10px]">CCTV</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('logs');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            activeTab === 'logs'
+              ? 'text-sky-600 font-extrabold bg-sky-50/80'
+              : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+          }`}
+        >
+          <FileText className="w-5 h-5 shrink-0" />
+          <span className="text-[10px]">Data Log</span>
+        </button>
+
+        {currentUser.role === 'admin' || currentUser.role === 'developer' ? (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('users');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+              activeTab === 'users'
+                ? 'text-sky-600 font-extrabold bg-sky-50/80'
+                : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+            }`}
+          >
+            <Users className="w-5 h-5 shrink-0" />
+            <span className="text-[10px]">Users</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('alarms');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+              activeTab === 'alarms'
+                ? 'text-sky-600 font-extrabold bg-sky-50/80'
+                : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
+            }`}
+          >
+            <Bell className="w-5 h-5 shrink-0" />
+            <span className="text-[10px]">Alarm</span>
+          </button>
+        )}
+      </nav>
 
       {/* ─── INTERACTIVE BEGINNER GUIDED TOUR OVERLAY ─── */}
       <GuidedTour

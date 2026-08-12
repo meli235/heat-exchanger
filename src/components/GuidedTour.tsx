@@ -28,7 +28,6 @@ export interface TourStep {
   icon: React.ReactNode;
   description: string;
   tips?: string;
-  dockPosition: 'bottom-right' | 'bottom-left' | 'side-right' | 'side-left' | 'top-right';
 }
 
 export const TOUR_STEPS: TourStep[] = [
@@ -39,9 +38,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Pengenalan Sistem',
     icon: <Compass className="w-5 h-5 text-sky-500" />,
     title: 'Selamat Datang di FluidHE Dashboard!',
-    description: 'Aplikasi pemantauan & kendali alat penukar panas (Heat Exchanger) laboratorium secara real-time berbasis IoT.',
-    tips: 'Ikuti 9 langkah interaktif ini untuk memahami seluruh fungsi alat dengan mudah.',
-    dockPosition: 'bottom-right'
+    description: 'Aplikasi pemantauan & kendali alat penukar panas (Heat Exchanger) laboratorium secara real-time berbasis IoT Cloud.',
+    tips: 'Ikuti 9 langkah interaktif ini untuk memahami alur pemantauan dan kontrol alat dengan mudah.'
   },
   {
     id: 'iot-status',
@@ -49,10 +47,9 @@ export const TOUR_STEPS: TourStep[] = [
     tab: 'dashboard',
     badge: 'Koneksi Cloud',
     icon: <Server className="w-5 h-5 text-emerald-500" />,
-    title: 'Status Koneksi IoT Cloud',
-    description: 'Lampu hijau "ONLINE" di atas menandakan sistem web sudah tersambung langsung ke mikrokontroler (ESP32). Seluruh data sensor diperbarui otomatis setiap detik.',
-    tips: 'Jika berstatus OFFLINE, pastikan alat sudah dinyalakan & tersambung WiFi.',
-    dockPosition: 'bottom-right'
+    title: 'Status Koneksi IoT Cloud (ESP32)',
+    description: 'Lampu hijau "ONLINE" di atas menandakan sistem web sudah terhubung langsung ke mikrokontroler ESP32. Seluruh data sensor diperbarui otomatis secara real-time.',
+    tips: 'Jika berstatus OFFLINE, pastikan alat Heat Exchanger sudah dinyalakan & tersambung WiFi laboratorium.'
   },
   {
     id: 'temp-cards',
@@ -60,10 +57,9 @@ export const TOUR_STEPS: TourStep[] = [
     tab: 'dashboard',
     badge: 'Sensor Suhu',
     icon: <Activity className="w-5 h-5 text-orange-500" />,
-    title: '4 Sensor Suhu Utama (T1, T2, T3, T4)',
-    description: 'Memantau perubahan temperatur air panas dan air dingin secara langsung:\n• T1: Suhu air panas masuk (Inlet)\n• T2: Suhu air panas keluar (Outlet)\n• T3: Suhu air dingin suplai\n• T4: Suhu air dingin setelah menyerap panas.',
-    tips: 'Perbedaan T1 dan T2 menunjukkan seberapa banyak energi panas yang berhasil dilepaskan.',
-    dockPosition: 'bottom-right'
+    title: '4 Sensor Suhu Utama (TI1, TI2, TI3, TI4)',
+    description: 'Memantau perubahan temperatur air panas dan air dingin secara langsung:\n• TI1: Suhu air panas masuk (Hot Inlet)\n• TI2: Suhu air panas keluar (Hot Outlet)\n• TI3: Suhu air dingin masuk (Cold Inlet)\n• TI4: Suhu air dingin keluar (Cold Outlet)',
+    tips: 'Perbedaan TI1 dan TI2 menunjukkan besaran energi kalor yang berhasil dilepaskan pada penukar panas.'
   },
   {
     id: 'pid-diagram',
@@ -72,9 +68,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Skematik Mesin',
     icon: <Layers className="w-5 h-5 text-indigo-500" />,
     title: 'Diagram Skematik Aliran (P&ID)',
-    description: 'Visualisasi interaktif jalur pipa fluida. Pipa merah dialiri air panas dari pemanas, dan pipa biru dialiri air dingin pendingin. Partikel bergerak menunjukkan arah dan laju aliran fluida.',
-    tips: 'Titik sensor pada diagram menunjukkan suhu dan tekanan pada pipa penukar panas.',
-    dockPosition: 'bottom-right'
+    description: 'Visualisasi interaktif jalur perpipaan fluida: Pipa merah dialiri air panas dari tangki pemanas, sedangkan pipa biru dialiri air pendingin. Animasi partikel bergerak menunjukkan arah dan laju sirkulasi fluida.',
+    tips: 'Titik sensor interaktif pada diagram menampilkan nilai suhu dan tekanan aktual secara langsung.'
   },
   {
     id: 'control-heater',
@@ -82,10 +77,9 @@ export const TOUR_STEPS: TourStep[] = [
     tab: 'control',
     badge: 'Pusat Kendali',
     icon: <Flame className="w-5 h-5 text-orange-500" />,
-    title: 'Daya Pemanas & Target Suhu',
-    description: 'Lihat kotak yang disorot di sebelah kiri: Anda dapat menyalakan/mematikan pemanas (Heater ON/OFF) dan menentukan target suhu air panas (misal: 60°C). Sistem akan memanaskan air secara otomatis dan bertahap.',
-    tips: 'Dual Heater cerdas: 1000W saat dingin untuk pemanasan cepat, dan 500W saat mendekati target.',
-    dockPosition: 'side-right'
+    title: 'Daya Utama Pemanas (Dual Heater)',
+    description: 'Pada panel yang disorot: Anda dapat menyalakan/mematikan pemanas (Heater ON/OFF) atau mengaktifkan mode AUTO untuk pengelolaan suhu otomatis via PID ESP32.',
+    tips: 'Dual Heater Cerdas: 1000W saat dingin untuk pemanasan cepat, dan 500W otomatis saat mendekati target suhu.'
   },
   {
     id: 'flow-mode',
@@ -94,9 +88,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Mode Aliran',
     icon: <ArrowRightLeft className="w-5 h-5 text-sky-500" />,
     title: 'Pilihan Arah Aliran Fluida (Flow Mode)',
-    description: 'Lihat tombol yang disorot di sebelah kanan: Anda dapat mengubah arah aliran fluida hanya dengan satu klik:\n• COUNTER (Lawan Arah): Efisiensi perpindahan panas maksimal.\n• CO-CURRENT (Searah): Kedua fluida mengalir searah.',
-    tips: 'Katup solenoid (SV1-SV4) akan beralih posisi secara otomatis sesuai mode pilihan.',
-    dockPosition: 'side-left'
+    description: 'Pada panel yang disorot: Anda dapat mengubah arah aliran fluida hanya dengan satu klik:\n• COUNTER (Lawan Arah): Efisiensi perpindahan panas maksimal.\n• CO-CURRENT (Searah): Kedua fluida mengalir searah.',
+    tips: 'Empat katup solenoid (SV1 - SV4) akan otomatis beralih konfigurasi sesuai mode yang Anda pilih.'
   },
   {
     id: 'alarm-system',
@@ -105,9 +98,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Keamanan & Alarm',
     icon: <Bell className="w-5 h-5 text-rose-500" />,
     title: 'Sistem Ambang Batas Alarm & Sirene',
-    description: 'Atur batas aman suhu maksimum (TI1) dan beda tekanan maksimum (ΔP Hot). Jika sensor mendeteksi nilai melebihi batas aman, sirene audio akan berbunyi dan log peringatan otomatis tercatat.',
-    tips: 'Anda dapat mengatur tombol Siren Audio Aktif/Mute untuk kebutuhan praktikum di laboratorium.',
-    dockPosition: 'bottom-right'
+    description: 'Atur batas aman suhu maksimum (TI1) dan beda tekanan maksimum (ΔP Hot). Jika pembacaan sensor melampaui batas aman, sirene audio berbunyi dan log peringatan otomatis tercatat.',
+    tips: 'Tersedia tombol Mute / Aktifkan Sirene untuk kenyamanan selama praktikum laboratorium berlangsung.'
   },
   {
     id: 'logs-export',
@@ -116,9 +108,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Data & Laporan',
     icon: <Download className="w-5 h-5 text-emerald-500" />,
     title: 'Riwayat Sensor & Ekspor Excel',
-    description: 'Seluruh riwayat bacaan sensor tercatat otomatis per detik. Klik tombol "Export Excel (.xlsx)" di atas untuk mengunduh data mentah ke spreadsheet untuk laporan praktikum atau penelitian.',
-    tips: 'Data Excel sudah otomatis terformat lengkap dengan tanggal, jam, dan nilai tiap sensor.',
-    dockPosition: 'bottom-right'
+    description: 'Seluruh riwayat telemetri sensor tersimpan per detik. Klik tombol "Export Data Excel (.xlsx)" untuk mengunduh berkas spreadsheet lengkap untuk keperluan analisis data dan laporan praktikum.',
+    tips: 'Berkas Excel sudah terformat rapi dengan stempel waktu, nilai seluruh sensor, serta status aktuator.'
   },
   {
     id: 'emergency-stop',
@@ -127,9 +118,8 @@ export const TOUR_STEPS: TourStep[] = [
     badge: 'Keamanan Darurat',
     icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
     title: 'Tombol Darurat (Emergency TRIP)',
-    description: 'Lihat tombol merah berkedip di header atas: Jika terjadi situasi darurat (kebocoran pipa atau panas berlebih), tekan tombol ini untuk seketika mematikan seluruh pemanas dan pompa demi keamanan.',
-    tips: 'Tombol darurat ini selalu siaga di bagian atas layar pada seluruh menu.',
-    dockPosition: 'bottom-right'
+    description: 'Tombol merah darurat di bilah atas: Jika terjadi kondisi kritis atau kebocoran, tekan tombol ini untuk seketika mematikan seluruh daya pemanas dan pompa demi keselamatan alat dan operator.',
+    tips: 'Tombol proteksi darurat ini selalu siaga di bagian atas layar pada semua halaman sistem.'
   }
 ];
 
@@ -145,6 +135,22 @@ interface TargetRect {
   left: number;
   width: number;
   height: number;
+  right: number;
+  bottom: number;
+}
+
+// Helper: Check if two rectangular boxes overlap with a safety margin
+function checkOverlap(
+  boxA: { top: number; left: number; width: number; height: number },
+  boxB: { top: number; left: number; width: number; height: number },
+  margin = 12
+): boolean {
+  return !(
+    boxA.left + boxA.width + margin < boxB.left ||
+    boxA.left > boxB.left + boxB.width + margin ||
+    boxA.top + boxA.height + margin < boxB.top ||
+    boxA.top > boxB.top + boxB.height + margin
+  );
 }
 
 export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }: GuidedTourProps) {
@@ -165,67 +171,162 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
 
     const el = document.getElementById(step.targetId);
     if (el) {
-      // Scroll element smoothly into view (offset slightly above center)
+      // Scroll element smoothly into view (offset slightly so it is comfortably in the center)
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
 
       const rect = el.getBoundingClientRect();
-      const padding = 6;
+      const padding = 8;
 
-      setTargetRect({
+      const tRect: TargetRect = {
         top: Math.max(0, rect.top - padding),
         left: Math.max(0, rect.left - padding),
         width: rect.width + padding * 2,
-        height: rect.height + padding * 2
-      });
+        height: rect.height + padding * 2,
+        right: rect.right + padding,
+        bottom: rect.bottom + padding
+      };
+      setTargetRect(tRect);
 
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const cardW = Math.min(380, vw - 32);
-      const cardH = bubbleRef.current ? bubbleRef.current.offsetHeight : 320;
+      const cardW = Math.min(390, vw - 32);
+      const cardH = bubbleRef.current ? bubbleRef.current.offsetHeight : 340;
 
-      let top = 0;
-      let left = 0;
+      // Safe boundaries considering fixed header (65px) and sidebar (256px on desktop)
+      const safeLeft = vw >= 768 ? 276 : 16;
+      const safeTop = 72;
+      const safeRight = vw - 16;
+      const safeBottom = vh - 16;
+
+      let finalTop = safeBottom - cardH - 12;
+      let finalLeft = safeRight - cardW - 12;
 
       if (vw < 768) {
-        // Mobile layout: Fixed bottom sheet, target scrolled to upper half
-        top = vh - cardH - 16;
-        left = Math.max(16, (vw - cardW) / 2);
-      } else {
-        // Desktop: Intelligent Side-by-Side Docking (NEVER OVERLAPS THE TARGET FEATURE!)
-        if (step.dockPosition === 'side-right') {
-          // Place card firmly on the RIGHT side of the screen
-          left = vw - cardW - 24;
-          top = Math.max(80, Math.min(vh - cardH - 24, rect.top));
-        } else if (step.dockPosition === 'side-left') {
-          // Place card firmly on the LEFT side of the screen (clear of sidebar)
-          left = Math.max(24, Math.min(vw - cardW - 24, rect.left > cardW + 30 ? rect.left - cardW - 24 : 270));
-          top = Math.max(80, Math.min(vh - cardH - 24, rect.top));
-        } else if (step.dockPosition === 'top-right') {
-          left = vw - cardW - 24;
-          top = 80;
-        } else if (step.dockPosition === 'bottom-left') {
-          left = 270;
-          top = vh - cardH - 24;
+        // Mobile view: Place card at bottom or top depending on target vertical position
+        const targetCenterY = tRect.top + tRect.height / 2;
+        if (targetCenterY < vh / 2) {
+          finalTop = Math.max(safeTop, vh - cardH - 16);
         } else {
-          // Default 'bottom-right' docked card (Corner placement, 0% overlap with center diagrams/headers)
-          left = vw - cardW - 24;
-          top = vh - cardH - 24;
+          finalTop = safeTop + 8;
+        }
+        finalLeft = Math.max(16, (vw - cardW) / 2);
+      } else {
+        // Desktop View: Intelligent Collision-Free Placement
+        const tCenterX = tRect.left + tRect.width / 2;
+        const mainContentCenterX = safeLeft + (vw - safeLeft) / 2;
+        const isTargetOnRightSide = tCenterX >= mainContentCenterX;
+        const isTargetInUpperHalf = (tRect.top + tRect.height / 2) < vh / 2;
+
+        // Generate list of non-overlapping candidate positions in order of visual elegance
+        const candidates: { left: number; top: number; score: number }[] = [];
+
+        if (isTargetOnRightSide) {
+          // Target is on the Right: Prioritize placing card on the LEFT side so target is fully clear
+          // Priority 1: Adjacent to the left of the target element
+          const adjLeft = tRect.left - cardW - 24;
+          if (adjLeft >= safeLeft) {
+            candidates.push({
+              left: adjLeft,
+              top: Math.max(safeTop, Math.min(safeBottom - cardH, tRect.top)),
+              score: 100
+            });
+          }
+
+          // Priority 2: Left side docked (Bottom-Left)
+          candidates.push({
+            left: safeLeft + 12,
+            top: safeBottom - cardH - 12,
+            score: 80
+          });
+
+          // Priority 3: Left side docked (Top-Left)
+          candidates.push({
+            left: safeLeft + 12,
+            top: safeTop + 12,
+            score: 70
+          });
+
+          // Priority 4: Below or above target
+          if (tRect.bottom + cardH + 20 <= safeBottom) {
+            candidates.push({
+              left: Math.max(safeLeft, Math.min(safeRight - cardW, tRect.left)),
+              top: tRect.bottom + 16,
+              score: 60
+            });
+          }
+        } else {
+          // Target is on the Left side: Prioritize placing card on the RIGHT side so target is fully clear
+          // Priority 1: Adjacent to the right of target element
+          const adjRight = tRect.right + 24;
+          if (adjRight + cardW <= safeRight) {
+            candidates.push({
+              left: adjRight,
+              top: Math.max(safeTop, Math.min(safeBottom - cardH, tRect.top)),
+              score: 100
+            });
+          }
+
+          // Priority 2: Right side docked (Bottom-Right)
+          candidates.push({
+            left: safeRight - cardW - 12,
+            top: safeBottom - cardH - 12,
+            score: 80
+          });
+
+          // Priority 3: Right side docked (Top-Right)
+          candidates.push({
+            left: safeRight - cardW - 12,
+            top: safeTop + 12,
+            score: 70
+          });
+
+          // Priority 4: Below or above target
+          if (tRect.bottom + cardH + 20 <= safeBottom) {
+            candidates.push({
+              left: Math.max(safeLeft, Math.min(safeRight - cardW, tRect.left)),
+              top: tRect.bottom + 16,
+              score: 60
+            });
+          }
+        }
+
+        // Add opposite-side fallbacks in case target is very wide
+        candidates.push({
+          left: isTargetOnRightSide ? safeLeft + 12 : safeRight - cardW - 12,
+          top: isTargetInUpperHalf ? safeBottom - cardH - 12 : safeTop + 12,
+          score: 40
+        });
+
+        // Find first candidate that has 0% overlap with target
+        let bestCandidate = candidates.find(c => {
+          return !checkOverlap(
+            { top: c.top, left: c.left, width: cardW, height: cardH },
+            tRect,
+            16
+          );
+        });
+
+        if (!bestCandidate && candidates.length > 0) {
+          bestCandidate = candidates[0];
+        }
+
+        if (bestCandidate) {
+          finalLeft = bestCandidate.left;
+          finalTop = bestCandidate.top;
         }
       }
 
-      // STRICT VIEWPORT CLAMPING:
-      const minTop = 72;
-      const maxTop = Math.max(minTop, vh - cardH - 16);
-      const clampedTop = Math.max(minTop, Math.min(top, maxTop));
-      const clampedLeft = Math.max(16, Math.min(left, vw - cardW - 16));
+      // Strict clamping inside visible viewport
+      const clampedTop = Math.max(safeTop, Math.min(finalTop, safeBottom - cardH));
+      const clampedLeft = Math.max(16, Math.min(finalLeft, vw - cardW - 16));
 
       setBubblePosition({ top: clampedTop, left: clampedLeft });
     } else {
       setTargetRect(null);
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const cardW = Math.min(380, vw - 32);
-      const cardH = bubbleRef.current ? bubbleRef.current.offsetHeight : 320;
+      const cardW = Math.min(390, vw - 32);
+      const cardH = bubbleRef.current ? bubbleRef.current.offsetHeight : 340;
       setBubblePosition({
         top: Math.max(80, vh - cardH - 24),
         left: Math.max(16, vw - cardW - 24)
@@ -243,11 +344,11 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
 
     const timer1 = setTimeout(() => {
       updateTargetPosition();
-    }, 100);
+    }, 80);
 
     const timer2 = setTimeout(() => {
       updateTargetPosition();
-    }, 350);
+    }, 300);
 
     return () => {
       clearTimeout(timer1);
@@ -275,6 +376,30 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
       updateTargetPosition();
     }
   }, [isOpen, currentStepIndex, updateTargetPosition]);
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        if (currentStepIndex < TOUR_STEPS.length - 1) {
+          setCurrentStepIndex(prev => prev + 1);
+        } else {
+          setIsCompleted(true);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (currentStepIndex > 0) {
+          setCurrentStepIndex(prev => prev - 1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentStepIndex, onClose]);
 
   // Reset state when opened
   useEffect(() => {
@@ -308,13 +433,13 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
   return (
     <div className="fixed inset-0 z-[9999] pointer-events-auto overflow-hidden font-sans">
       
-      {/* ─── CRYSTAL-CLEAR SVG SPOTLIGHT CUTOUT (NO BLUR OVER TARGET!) ─── */}
+      {/* ─── CRYSTAL-CLEAR SVG SPOTLIGHT CUTOUT (NO OVERLAY OR BLUR OVER TARGET!) ─── */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
         <defs>
           <mask id="tour-spotlight-mask">
             {/* White covers entire screen (semi-transparent darkened area) */}
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {/* Black hole cuts out the target element so it is 100% clear and sharp */}
+            {/* Black hole cuts out the target element so it is 100% visible, sharp, and unobstructed */}
             {targetRect && !isCompleted && (
               <rect
                 x={targetRect.left}
@@ -329,13 +454,13 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
           </mask>
         </defs>
         
-        {/* Soft darkened backdrop (no blur, clear readability everywhere) */}
+        {/* Soft darkened backdrop (click anywhere on backdrop to dismiss) */}
         <rect
           x="0"
           y="0"
           width="100%"
           height="100%"
-          fill="rgba(15, 23, 42, 0.55)"
+          fill="rgba(15, 23, 42, 0.52)"
           mask="url(#tour-spotlight-mask)"
           className="pointer-events-auto cursor-pointer"
           onClick={onClose}
@@ -345,7 +470,7 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
       {/* ─── HIGHLIGHT BORDER & TARGET INDICATOR OVER THE FEATURE ─── */}
       {targetRect && !isCompleted && (
         <div
-          className="absolute transition-all duration-300 ease-out rounded-2xl pointer-events-none z-20 ring-4 ring-sky-400 shadow-[0_0_35px_rgba(56,189,248,0.85)]"
+          className="absolute transition-all duration-300 ease-out rounded-2xl pointer-events-none z-20 ring-4 ring-sky-400/90 shadow-[0_0_35px_rgba(56,189,248,0.75)]"
           style={{
             top: `${targetRect.top}px`,
             left: `${targetRect.left}px`,
@@ -354,10 +479,10 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
           }}
         >
           {/* Animated pulsing highlight border */}
-          <div className="absolute inset-0 rounded-2xl border-2 border-white animate-pulse" />
+          <div className="absolute inset-0 rounded-2xl border-2 border-white/90 animate-pulse" />
           
           {/* Glowing Target Pointer Badge */}
-          <div className="absolute -top-3 left-3 px-2.5 py-0.5 bg-gradient-to-r from-sky-600 to-blue-600 text-white text-[9.5px] font-black rounded-full shadow-lg uppercase tracking-wider flex items-center gap-1">
+          <div className="absolute -top-3.5 left-4 px-2.5 py-0.5 bg-gradient-to-r from-sky-600 via-indigo-600 to-blue-600 text-white text-[9.5px] font-black rounded-full shadow-xl uppercase tracking-wider flex items-center gap-1.5 ring-2 ring-white/90">
             <Target className="w-3 h-3 text-amber-300 animate-spin" />
             <span>Target Fitur</span>
           </div>
@@ -380,14 +505,14 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
                 Siap Mengoperasikan Alat!
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Anda sudah mempelajari seluruh alur pemantauan sensor, kontrol pemanas, sistem alarm, dan ekspor data Excel.
+                Anda sudah memahami seluruh alur pemantauan sensor, kontrol pemanas, sistem alarm, dan ekspor data Excel.
               </p>
             </div>
 
             <div className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 text-[10.5px] text-slate-600 text-left flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <span>
-                Anda bisa membuka kembali panduan ini kapan saja lewat tombol <strong>"❓ Panduan"</strong> di pojok kanan atas.
+                Anda bisa membuka kembali panduan ini kapan saja lewat tombol <strong>"Panduan"</strong> di pojok kanan atas.
               </span>
             </div>
 
@@ -408,11 +533,11 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
           style={{
             top: `${bubblePosition.top}px`,
             left: `${bubblePosition.left}px`,
-            maxWidth: '380px',
+            maxWidth: '390px',
             width: 'calc(100vw - 32px)'
           }}
         >
-          <div className="relative bg-white/98 backdrop-blur-sm rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-100 ring-1 ring-slate-900/10 space-y-3 overflow-y-auto max-h-[calc(100vh-80px)]">
+          <div className="relative bg-white/98 backdrop-blur-md rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-100 ring-1 ring-slate-900/10 space-y-3 overflow-y-auto max-h-[calc(100vh-80px)]">
             
             {/* Header: Badge Step & Close Button */}
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
@@ -430,18 +555,19 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
                 </div>
               </div>
 
+              {/* Close Button */}
               <button
                 type="button"
                 onClick={onClose}
                 className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-                title="Tutup Panduan"
+                title="Tutup Panduan (Esc)"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Title & Description */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 leading-snug">
                 {step.title}
               </h4>
@@ -450,7 +576,7 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
               </p>
 
               {step.tips && (
-                <div className="mt-1.5 p-2 bg-amber-50/90 rounded-xl border border-amber-200/80 text-[10px] sm:text-[10.5px] text-amber-900 leading-relaxed font-medium">
+                <div className="mt-1.5 p-2.5 bg-amber-50/90 rounded-xl border border-amber-200/80 text-[10px] sm:text-[10.5px] text-amber-900 leading-relaxed font-medium">
                   {step.tips}
                 </div>
               )}
@@ -520,3 +646,4 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
     </div>
   );
 }
+
