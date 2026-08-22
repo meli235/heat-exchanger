@@ -554,7 +554,8 @@ export default function FluidHEDashboard() {
   const [tempCctvUrl, setTempCctvUrl] = useState<string>('http://localhost:8889/stream.html?src=he_cctv');
   
   // EZVIZ Mobile App Style Controls
-  const [cctvAudioMuted, setCctvAudioMuted] = useState<boolean>(true);
+  const [cctvAudioMuted, setCctvAudioMuted] = useState<boolean>(false);
+  const [audioUserActivated, setAudioUserActivated] = useState<boolean>(false);
   const [cctvVolume, setCctvVolume] = useState<number>(85);
   const [cctvMicActive, setCctvMicActive] = useState<boolean>(false);
   const [cctvDefinition, setCctvDefinition] = useState<'1080p' | '720p' | 'auto'>('1080p');
@@ -3968,11 +3969,28 @@ export default function FluidHEDashboard() {
                         </div>
                       ) : cctvStreamSource === 'local' ? (
                         <>
+                          {!cctvAudioMuted && !audioUserActivated && (
+                            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 rounded-2xl">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAudioUserActivated(true);
+                                  if (videoRef.current) {
+                                    videoRef.current.muted = false;
+                                    videoRef.current.play().catch(() => {});
+                                  }
+                                }}
+                                className="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-sm flex items-center gap-2 transition cursor-pointer shadow-lg shadow-sky-600/30"
+                              >
+                                <Volume2 className="w-5 h-5" /> Klik untuk Nyalakan Audio Lab
+                              </button>
+                            </div>
+                          )}
                           <video
                             ref={videoRef}
                             autoPlay
                             playsInline
-                            muted={cctvAudioMuted}
+                            muted={!audioUserActivated || cctvAudioMuted}
                             className="w-full h-full object-contain rounded-2xl"
                           />
                           {!webrtcConnected && (
