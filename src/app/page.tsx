@@ -106,10 +106,10 @@ interface TelemetryPoint {
   ti4: number; // Cold Outlet (°C)
   ti5: number; // Shell Mid 1 (°C)
   ti6: number; // Shell Mid 2 (°C)
-  pi1: number; // Hot Inlet Press (barg)
-  pi2: number; // Hot Outlet Press (barg)
-  pi3: number; // Cold Inlet Press (barg)
-  pi4: number; // Cold Outlet Press (barg)
+  pi1: number; // Hot Inlet Press (atm-g)
+  pi2: number; // Hot Outlet Press (atm-g)
+  pi3: number; // Cold Inlet Press (atm-g)
+  pi4: number; // Cold Outlet Press (atm-g)
   fc1: number; // Hot Flow Rate (L/min)
   fc2: number; // Cold Flow Rate (L/min)
   tc1Setpoint: number; // Target Temp (°C)
@@ -1818,7 +1818,7 @@ export default function FluidHEDashboard() {
               <circle cx="180" cy="45" r="14" fill="#FFFFFF" stroke="#0284C7" strokeWidth="2.5" />
               <text x="180" y="49" textAnchor="middle" className="text-[9px] font-extrabold fill-[#0284C7]">P1</text>
               <rect x="155" y="18" width="50" height="16" rx="4" fill="#F1F5F9" stroke="#0284C7" strokeWidth="1" />
-              <text x="180" y="30" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi1} barg</text>
+              <text x="180" y="30" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi1} atm-g</text>
             </g>
 
             {/* SV1 (NC) Solenoid Valve Badge */}
@@ -1961,14 +1961,14 @@ export default function FluidHEDashboard() {
               <circle cx="550" cy="415" r="14" fill="#FFFFFF" stroke="#0284C7" strokeWidth="2.5" />
               <text x="550" y="419" textAnchor="middle" className="text-[9px] font-extrabold fill-[#0284C7]">P2</text>
               <rect x="525" y="432" width="50" height="16" rx="4" fill="#F1F5F9" stroke="#0284C7" strokeWidth="1" />
-              <text x="550" y="444" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi2} barg</text>
+              <text x="550" y="444" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi2} atm-g</text>
             </g>
 
             {/* Delta P Indicator */}
             <g className="cursor-pointer">
               <rect x="340" y="415" width="130" height="24" rx="8" fill="#EFF6FF" stroke="#3B82F6" strokeWidth="1.5" />
               <text x="405" y="431" textAnchor="middle" className="text-[10px] font-extrabold fill-blue-900">
-                ΔP (P1 - P2) = {deltaPHot} barg
+                ΔP (P1 - P2) = {deltaPHot} atm-g
               </text>
             </g>
           </svg>
@@ -2511,7 +2511,7 @@ export default function FluidHEDashboard() {
               </div>
               <div className="flex justify-between text-slate-700">
                 <span>Pressure Drop Hot Fluid (ΔP):</span>
-                <strong className={deltaPHot > deltaPMaxThreshold ? 'text-red-700 font-bold' : ''}>{deltaPHot} barg</strong>
+                <strong className={deltaPHot > deltaPMaxThreshold ? 'text-red-700 font-bold' : ''}>{deltaPHot} atm-g</strong>
               </div>
             </div>
 
@@ -3086,11 +3086,11 @@ export default function FluidHEDashboard() {
                   </div>
                   <div className="mt-2 flex items-baseline justify-between">
                     <span className="text-xl font-extrabold text-slate-900">{latestData.pi1} / {latestData.pi2}</span>
-                    <span className="text-xs font-semibold text-slate-500">barg</span>
+                    <span className="text-xs font-semibold text-slate-500">atm-g</span>
                   </div>
                   <div className="mt-2 text-[11px] flex justify-between items-center p-1 bg-slate-50 rounded-lg">
                     <span className="text-slate-500">ΔP Hot:</span>
-                    <strong className="text-sky-700">{deltaPHot} barg</strong>
+                    <strong className="text-sky-700">{deltaPHot} atm-g</strong>
                   </div>
                 </div>
 
@@ -3106,11 +3106,11 @@ export default function FluidHEDashboard() {
                   </div>
                   <div className="mt-2 flex items-baseline justify-between">
                     <span className="text-xl font-extrabold text-slate-900">{latestData.pi3} / {latestData.pi4}</span>
-                    <span className="text-xs font-semibold text-slate-500">barg</span>
+                    <span className="text-xs font-semibold text-slate-500">atm-g</span>
                   </div>
                   <div className="mt-2 text-[11px] flex justify-between items-center p-1 bg-slate-50 rounded-lg">
                     <span className="text-slate-500">ΔP Cold:</span>
-                    <strong className="text-cyan-700">{deltaPCold} barg</strong>
+                    <strong className="text-cyan-700">{deltaPCold} atm-g</strong>
                   </div>
                 </div>
 
@@ -3498,24 +3498,24 @@ export default function FluidHEDashboard() {
                     </div>
 
                     <div>
-                      <div className="flex items-center gap-2">
-                        <strong className="text-xs font-bold text-slate-900">
-                          {syncFeedback.active ? syncFeedback.message : 'Jalur Sinkronisasi IoT Cloud (ESP32)'}
-                        </strong>
-                        {syncFeedback.active && (
-                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${syncFeedback.type === 'syncing'
-                              ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
-                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            }`}>
-                            {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {syncFeedback.active
-                          ? syncFeedback.detail
-                          : 'Setiap perubahan tombol & slider disinkronkan secara real-time ke mikrokontroler via tabel device_controls.'}
-                      </p>
+                      {syncFeedback.active && (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <strong className="text-xs font-bold text-slate-900">
+                              {syncFeedback.message}
+                            </strong>
+                            <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${syncFeedback.type === 'syncing'
+                                ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              }`}>
+                              {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                            {syncFeedback.detail}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -3595,7 +3595,7 @@ export default function FluidHEDashboard() {
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Tekanan (PI1)</span>
                       <strong className="text-sky-600 font-extrabold text-sm sm:text-base">
-                        {supabaseTelemetry ? supabaseTelemetry.pressure.toFixed(2) : latestData.pi1.toFixed(2)} barg
+                        {supabaseTelemetry ? supabaseTelemetry.pressure.toFixed(2) : latestData.pi1.toFixed(2)} atm-g
                       </strong>
                     </div>
 
@@ -3947,9 +3947,7 @@ export default function FluidHEDashboard() {
                       CCTV Live Monitoring — Heat Exchanger Lab
                     </h2>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    FluidHE IP Cam (1080p Full HD) • Transmisi RTSP Real-Time (0-Delay)
-                  </p>
+
                 </div>
 
                 {/* Channel Switchers: Minimalist Tabs */}
@@ -4651,7 +4649,7 @@ export default function FluidHEDashboard() {
                     <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
                       <FileText className="w-6 h-6 text-sky-600" /> Laporan Monitoring Heat Exchanger
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive (Fasilitas unduh Flashdisk dinonaktifkan)</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5 no-print">
@@ -4678,29 +4676,7 @@ export default function FluidHEDashboard() {
                   </div>
                 </div>
 
-                {/* Banner Informasi Keamanan & Proteksi Data Flashdisk */}
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200/90 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2.5 bg-emerald-500/20 text-emerald-700 rounded-xl shrink-0">
-                      <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
-                        Proteksi Data HE: Ambil Data via Flashdisk Dinonaktifkan
-                        <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 font-extrabold rounded-full text-[10px]">Auto Cloud Storage</span>
-                      </h4>
-                      <p className="text-slate-600 mt-0.5 leading-relaxed">
-                        Pengambilan data manual menggunakan USB Flashdisk telah dinonaktifkan demi integritas & keamanan laboratorium. Seluruh log telemetri sensor Heat Exchanger otomatis terunggah dan tersimpan aman di Google Drive / Supabase Cloud DB.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleCloudDriveAccess}
-                    className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-1.5 transition text-xs shrink-0 active:scale-95"
-                  >
-                    <Cloud className="w-4 h-4 text-emerald-200" /> Buka Cloud Drive
-                  </button>
-                </div>
+
 
                 <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/90 mb-6 space-y-1.5 text-xs">
                   <h1 className="text-base font-extrabold text-slate-900 tracking-wide">LAPORAN MONITORING HEAT EXCHANGER UAD</h1>
@@ -4867,9 +4843,9 @@ export default function FluidHEDashboard() {
                         onChange={(e) => setDeltaPMaxThreshold(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800"
                       />
-                      <span className="text-xs text-slate-500 font-semibold">barg</span>
+                      <span className="text-xs text-slate-500 font-semibold">atm-g</span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1 font-medium">Maksimal operasi 2,0 barg (ambang aman pompa: 1,5–2,0 barg)</p>
+                    <p className="text-[11px] text-slate-500 mt-1 font-medium">Maksimal operasi 2,0 atm-g (ambang aman pompa: 1,5–2,0 atm-g)</p>
                   </div>
 
                   <div>
@@ -5782,18 +5758,7 @@ export default function FluidHEDashboard() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 text-xs text-slate-700">
-              {/* Alert Banner Flashdisk Disabled */}
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-3">
-                <div className="p-2 bg-amber-500/20 text-amber-800 rounded-xl shrink-0">
-                  <Lock className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-amber-900 text-sm">Ambil Data via Flashdisk Dinonaktifkan</h4>
-                  <p className="text-amber-800/90 mt-0.5 leading-relaxed">
-                    Sesuai standar operasional keamanan laboratorium, ekstraksi data manual menggunakan USB Flashdisk telah dinonaktifkan secara otomatis. Seluruh berkas telemetri HE diproteksi dan tersinkron langsung ke Cloud Drive institusi.
-                  </p>
-                </div>
-              </div>
+
 
               {/* Status Sync Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
