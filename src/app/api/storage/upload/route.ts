@@ -1,31 +1,24 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://upcdnlqytwiebykybval.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_blciMJhn8B2D0jSIecBOtw_E6okFbsf';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://upcdnlqytwiebykybval.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_blciMJhn8B2D0jSIecBOtw_E6okFbsf';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function ensureBucketExists(bucketName: string): Promise<string> {
   try {
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-    
     if (!listError && buckets && buckets.length > 0) {
       const found = buckets.find((b) => b.name === bucketName || b.id === bucketName);
       if (found) return found.name;
     }
-
-    // Try to create the bucket automatically if it doesn't exist
     const { data: newBucket, error: createError } = await supabase.storage.createBucket(bucketName, {
       public: true,
-      allowedMimeTypes: undefined,
-      fileSizeLimit: undefined,
     });
-
     if (!createError && newBucket) {
       return bucketName;
     }
-
     if (!listError && buckets && buckets.length > 0) {
       return buckets[0].name;
     }
@@ -35,67 +28,62 @@ async function ensureBucketExists(bucketName: string): Promise<string> {
   return bucketName;
 }
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
     const folder = (formData.get('folder') as string) || 'telemetry-logs';
 
     if (!file) {
-      return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    const fileName = file.name || `file_${Date.now()}`;
-    const filePath = `${folder}/${Date.now()}_${fileName}`;
-    const fileBuffer = await file.arrayBuffer();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `${folder}/${timestamp}_${file.name}`;
 
-    let targetBucket = 'fluidhe-storage';
-    targetBucket = await ensureBucketExists(targetBucket);
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
 
-    // Upload to target bucket
-    let { data: uploadData, error: uploadError } = await supabase.storage
-      .from(targetBucket)
-      .upload(filePath, fileBuffer, {
-        contentType: file.type || 'application/octet-stream',
-        upsert: true,
+    let bucketName = 'fluidhe-lab';
+    bucketName = await ensureBucketExists(bucketName);
+
+    let { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(fileName, buffer, {
+        contentType: file.type,
+        upsert: false,
       });
 
-    if (uploadError && (uploadError.message?.toLowerCase().includes('not found') || uploadError.message?.toLowerCase().includes('bucket'))) {
-      // Try creating bucket on-demand
-      await supabase.storage.createBucket(targetBucket, { public: true });
-      const retryResult = await supabase.storage
-        .from(targetBucket)
-        .upload(filePath, fileBuffer, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: true,
+    if (error && (error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('bucket'))) {
+      await supabase.storage.createBucket(bucketName, { public: true });
+      const retry = await supabase.storage
+        .from(bucketName)
+        .upload(fileName, buffer, {
+          contentType: file.type,
+          upsert: false,
         });
-      uploadData = retryResult.data;
-      uploadError = retryResult.error;
+      data = retry.data;
+      error = retry.error;
     }
 
-    if (uploadError) {
-      console.error('Supabase Storage upload error:', uploadError);
-      return NextResponse.json({
-        success: false,
-        error: `Supabase Storage error: ${uploadError.message}. Pastikan bucket 'fluidhe-storage' (Public) sudah dibuat di Dashboard Supabase.`,
-      }, { status: 400 });
-    }
+    if (error) throw error;
 
-    const { data: publicUrlData } = supabase.storage.from(targetBucket).getPublicUrl(filePath);
-    const publicUrl = publicUrlData?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${targetBucket}/${filePath}`;
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucketName)
+      .getPublicUrl(fileName);
 
     return NextResponse.json({
       success: true,
+      fileName: file.name,
+      path: fileName,
       url: publicUrl,
-      path: filePath,
-      fileName: fileName,
-      bucket: targetBucket,
     });
-  } catch (err: any) {
-    console.error('Storage upload route error:', err);
-    return NextResponse.json({
-      success: false,
-      error: err?.message || 'Internal server error during upload',
-    }, { status: 500 });
+
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Upload failed' },
+      { status: 500 }
+    );
   }
 }

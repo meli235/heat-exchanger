@@ -1634,21 +1634,21 @@ export default function FluidHEDashboard() {
   const handleExportAndUpload = async () => {
     try {
       setIsUploading(true);
-      triggerCctvToast('⏳ Mengolah data & mengunggah file ke Google Drive...', 'info');
+      triggerCctvToast('⏳ Mengolah data & mengunggah file ke Cloud Storage...', 'info');
 
       // 1. Generate Excel (kode yang sudah ada)
       const wb = XLSX.utils.book_new();
       const wsData = [
-        ['Waktu Timestamp', 'TI1 Hot In (°C)', 'TI2 Hot Out (°C)', 'TI3 Cold In (°C)', 'TI4 Cold Out (°C)', 'FC1 Laju Alir (L/m)', 'Mode Aliran', 'Status Heater'],
+        ['Waktu', 'TI1', 'TI2', 'TI3', 'TI4', 'Heater1', 'Heater2', 'Mode'],
         ...filteredLogsData.map((d) => [
           d.timestamp,
           d.ti1,
           d.ti2,
           d.ti3,
           d.ti4,
-          d.fc1,
-          d.mode,
-          d.heater1Active || d.heater2Active ? 'ON' : 'OFF'
+          d.heater1Active ? 'ON' : 'OFF',
+          d.heater2Active ? 'ON' : 'OFF',
+          d.mode
         ])
       ];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -1658,22 +1658,23 @@ export default function FluidHEDashboard() {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
 
-      // 2. Upload ke Google Drive
+      // 2. Upload
+      const { uploadToCloud } = await import('@/lib/upload-helper');
       const fileName = `HE_Telemetry_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      const result = await uploadToDrive(blob, fileName, 'Telemetry_Logs');
+      const result = await uploadToCloud(blob, fileName, 'telemetry-logs');
 
-      triggerCctvToast('✅ File Excel tersimpan di Google Drive!', 'success');
+      triggerCctvToast('✅ File Excel tersimpan di Cloud Storage!', 'success');
 
       // 3. Berhasil!
-      alert(`✅ File tersimpan di Google Drive!\n\n🔗 Buka: ${result.viewUrl}`);
-      if (result.viewUrl) {
-        window.open(result.viewUrl, '_blank');
+      alert(`✅ File tersimpan di Cloud!\n🔗 ${result.url}`);
+      if (result.url) {
+        window.open(result.url, '_blank');
       }
 
     } catch (err: any) {
       console.error('Excel upload error:', err);
-      triggerCctvToast('❌ Gagal upload Excel ke Drive: ' + (err?.message || 'Error'), 'warning');
-      alert(`❌ Gagal upload: ${err?.message || 'Error'}`);
+      triggerCctvToast('❌ Gagal upload: ' + (err?.message || 'Error'), 'warning');
+      alert(`❌ Gagal upload: ${err.message}`);
     } finally {
       setIsUploading(false);
     }
