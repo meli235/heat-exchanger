@@ -4,13 +4,8 @@ api:
 
 streams:
   he_cctv:
-    # Ambil video + audio dari kamera (RTSP main stream)
-    - "rtsp://admin:TJPCYS@192.168.101.39:554/Streaming/Channels/101#backchannel=0"
-    # Transcoding AAC (dari kamera) -> Opus (untuk browser WebRTC)
-    - "ffmpeg:he_cctv#audio=opus"
+    - rtsp://admin:TJPCYS@192.168.101.39:554/Streaming/Channels/101#backchannel=0
+    - ffmpeg:he_cctv#audio=opus
 
 webrtc:
   listen: ":8555"
-
-ffmpeg:
-  bin: "C:\\Users\\mrwin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-essentials_build\\bin\\ffmpeg.exe"
