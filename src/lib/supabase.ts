@@ -45,7 +45,7 @@ export interface TelemetryRow {
   temp_2: number;         // Sensor Suhu T2 (°C)
   temp_3: number;         // Sensor Suhu T3 (°C)
   temp_4: number;         // Sensor Suhu T4 (°C)
-  pressure: number;       // Tekanan (bar)
+  pressure: number;       // Tekanan (barg)
   flow_rate: number;      // Debit Air (L/min)
   heater_status: string;  // "ON" | "OFF"
   warning_status: string; // "NORMAL" | "WARN_FLOW_HIGH"

@@ -20,6 +20,13 @@ import {
   CheckCircle2,
   Bell,
   Download,
+  Cloud,
+  CloudCheck,
+  Calendar,
+  Database,
+  HardDrive,
+  ExternalLink,
+  ShieldCheck,
   Search,
   Filter,
   UserPlus,
@@ -55,11 +62,25 @@ import {
   Radio,
   Mail,
   Key,
-  Send
+  Send,
+  Mic,
+  MicOff,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  Compass,
+  Film,
+  Square,
+  SlidersHorizontal,
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+  Disc,
+  Volume1
 } from 'lucide-react';
 
 // ─── TYPES & INTERFACES ───
-type UserRole = 'developer' | 'admin' | 'operator';
+type UserRole = 'admin' | 'operator';
 
 interface UserItem {
   id: string;
@@ -68,6 +89,12 @@ interface UserItem {
   role: UserRole;
   status: 'Active' | 'Inactive';
   lastLogin: string;
+  isScheduleRestricted?: boolean;
+  allowedStartDate?: string; // YYYY-MM-DD
+  allowedEndDate?: string;   // YYYY-MM-DD
+  allowedDays?: string[];
+  allowedStartTime?: string;
+  allowedEndTime?: string;
 }
 
 interface TelemetryPoint {
@@ -78,10 +105,10 @@ interface TelemetryPoint {
   ti4: number; // Cold Outlet (°C)
   ti5: number; // Shell Mid 1 (°C)
   ti6: number; // Shell Mid 2 (°C)
-  pi1: number; // Hot Inlet Press (bar)
-  pi2: number; // Hot Outlet Press (bar)
-  pi3: number; // Cold Inlet Press (bar)
-  pi4: number; // Cold Outlet Press (bar)
+  pi1: number; // Hot Inlet Press (barg)
+  pi2: number; // Hot Outlet Press (barg)
+  pi3: number; // Cold Inlet Press (barg)
+  pi4: number; // Cold Outlet Press (barg)
   fc1: number; // Hot Flow Rate (L/min)
   fc2: number; // Cold Flow Rate (L/min)
   tc1Setpoint: number; // Target Temp (°C)
@@ -191,9 +218,11 @@ export default function FluidHEDashboard() {
   const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('admin');
 
   // ─── NAVIGATION & TOUR STATE ───
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'logs' | 'alarms' | 'users' | 'developer'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'logs' | 'alarms' | 'users'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isTourOpen, setIsTourOpen] = useState<boolean>(false);
+  const [isCloudDriveModalOpen, setIsCloudDriveModalOpen] = useState<boolean>(false);
+  const [cloudLastSyncTime, setCloudLastSyncTime] = useState<string>(new Date().toLocaleTimeString('id-ID'));
 
   // ─── OPERATOR PRACTICE SESSION COUNTDOWN STATE (ADMIN MANAGED) ───
   const [operatorSessionLimit, setOperatorSessionLimit] = useState<number>(30); // minutes
@@ -216,7 +245,7 @@ export default function FluidHEDashboard() {
 
   // ─── ALARM THRESHOLDS & AUDIO ───
   const [ti1MaxThreshold, setTi1MaxThreshold] = useState<number>(75.0);
-  const [deltaPMaxThreshold, setDeltaPMaxThreshold] = useState<number>(0.8);
+  const [deltaPMaxThreshold, setDeltaPMaxThreshold] = useState<number>(2.0);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [showAlarmModal, setShowAlarmModal] = useState<boolean>(false);
 
@@ -238,27 +267,41 @@ export default function FluidHEDashboard() {
       timestamp: new Date(Date.now() - 1800000).toLocaleTimeString('id-ID'),
       sensor: 'PI1',
       metric: 'Hot Pressure Drop (P1 - P2)',
-      value: 0.85,
-      threshold: 0.80,
+      value: 2.15,
+      threshold: 2.00,
       severity: 'Warning',
       acknowledged: false
     }
   ]);
 
-  // ─── USER MANAGEMENT STATE (3-TIER: DEVELOPER, ADMIN, OPERATOR) ───
+  // ─── USER MANAGEMENT STATE (2-TIER: ADMIN, OPERATOR) ───
+  const todayStr = new Date().toISOString().slice(0, 10);
   const [usersList, setUsersList] = useState<UserItem[]>([
-    { id: 'USR-01', name: 'Dwi Melianti (Admin Utama / Dosen)', email: 'dwimeliantiistiqomah55@gmail.com', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15' },
-    { id: 'USR-02', name: 'Dwi Melianti (Mahasiswa ITENAS)', email: 'dwi.melianti@mhs.itenas.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:50' },
-    { id: 'USR-03', name: 'wink (Mahasiswa Operator)', email: 'mr.winkyy23@gmail.com', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 14:30' },
-    { id: 'USR-04', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15' },
-    { id: 'USR-05', name: 'Rahmat Hidayat (Mahasiswa Operator)', email: 'operator@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:40' },
-    { id: 'USR-06', name: 'Tim Developer Software & IoT', email: 'dev@uad.ac.id', role: 'developer', status: 'Active', lastLogin: 'Hari ini, 11:20' }
+    { id: 'USR-01', name: 'Dwi Melianti (Admin Utama / Dosen)', email: 'dwimeliantiistiqomah55@gmail.com', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false },
+    { id: 'USR-02', name: 'Dwi Melianti (Mahasiswa ITENAS)', email: 'dwi.melianti@mhs.itenas.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:50', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' },
+    { id: 'USR-03', name: 'wink (Mahasiswa Operator)', email: 'mr.winkyy23@gmail.com', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 14:30', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' },
+    { id: 'USR-04', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false },
+    { id: 'USR-05', name: 'Rahmat Hidayat (Mahasiswa Operator)', email: 'operator@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:40', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' }
   ]);
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
   const [newUserEmail, setNewUserEmail] = useState<string>('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('operator');
+  const [newUserRestricted, setNewUserRestricted] = useState<boolean>(true);
+  const [newUserStartDate, setNewUserStartDate] = useState<string>(todayStr);
+  const [newUserEndDate, setNewUserEndDate] = useState<string>(todayStr);
+  const [newUserStartTime, setNewUserStartTime] = useState<string>('07:00');
+  const [newUserEndTime, setNewUserEndTime] = useState<string>('18:00');
   const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+
+  // Active Session Lock State (Ensures ONLY 1 Active Account at a time)
+  const [activeSession, setActiveSession] = useState<{
+    email: string;
+    name: string;
+    role: string;
+    loginTime: string;
+    lastHeartbeat: number;
+  } | null>(null);
 
   // ─── AUTH & SECURE EMAIL OTP PASSWORD RESET STATES ───
   const DEFAULT_PASSWORDS: Record<string, string> = {
@@ -306,6 +349,82 @@ export default function FluidHEDashboard() {
     }
   }, []);
 
+  // Single Active Session Lock & Heartbeat Synchronization Effect
+  useEffect(() => {
+    const checkActiveSession = () => {
+      try {
+        const stored = localStorage.getItem('fluidhe_active_session');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const now = Date.now();
+          if (now - parsed.lastHeartbeat < 15000) {
+            setActiveSession(parsed);
+          } else {
+            setActiveSession(null);
+          }
+        } else {
+          setActiveSession(null);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    checkActiveSession();
+    const interval = setInterval(() => {
+      checkActiveSession();
+      if (isLoggedIn && currentUser) {
+        const mySession = {
+          email: currentUser.email,
+          name: currentUser.name,
+          role: currentUser.role,
+          loginTime: new Date().toLocaleTimeString('id-ID'),
+          lastHeartbeat: Date.now()
+        };
+        localStorage.setItem('fluidhe_active_session', JSON.stringify(mySession));
+        setActiveSession(mySession);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isLoggedIn, currentUser]);
+
+  // Schedule Access Validation Helper Function (Validation for Exact Single Date & Time)
+  const validateScheduleAccess = (user: UserItem): { allowed: boolean; reason?: string } => {
+    if (!user.isScheduleRestricted || user.role === 'admin') {
+      return { allowed: true };
+    }
+
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD format
+
+    // 1. Validasi Rentang Tanggal (Date Range Check)
+    if (user.allowedStartDate && todayStr < user.allowedStartDate) {
+      return { allowed: false, reason: `Masa izin praktikum Anda belum dimulai. (Mulai: ${user.allowedStartDate})` };
+    }
+    if (user.allowedEndDate && todayStr > user.allowedEndDate) {
+      return { allowed: false, reason: `Masa izin praktikum Anda telah berakhir pada ${user.allowedEndDate}.` };
+    }
+
+    // 2. Validasi Jam Operasional Check
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    const [startH, startM] = (user.allowedStartTime || '07:00').split(':').map(Number);
+    const startMinutes = startH * 60 + (startM || 0);
+
+    const [endH, endM] = (user.allowedEndTime || '18:00').split(':').map(Number);
+    const endMinutes = endH * 60 + (endM || 0);
+
+    if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
+      return {
+        allowed: false,
+        reason: `AKSES DITOLAK (DILUAR JAM OPERASIONAL): Saat ini (${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB) berada di luar jam operasional praktikum. Jam yang diizinkan Admin: ${user.allowedStartTime || '07:00'} s.d. ${user.allowedEndTime || '18:00'} WIB.`
+      };
+    }
+
+    return { allowed: true };
+  };
+
   const [isAddingUser, setIsAddingUser] = useState<boolean>(false);
   const [addUserSuccessMsg, setAddUserSuccessMsg] = useState<string | null>(null);
   const [lastCreatedUserCredentials, setLastCreatedUserCredentials] = useState<{ email: string; name: string; password: string; role: string } | null>(null);
@@ -335,7 +454,11 @@ export default function FluidHEDashboard() {
       email: email,
       role: newUserRole,
       status: 'Active',
-      lastLogin: 'Belum Pernah'
+      lastLogin: 'Belum Pernah',
+      isScheduleRestricted: newUserRole === 'operator' ? newUserRestricted : false,
+      allowedDays: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
+      allowedStartTime: newUserStartTime || '07:00',
+      allowedEndTime: newUserEndTime || '18:00'
     };
 
     const updatedUsers = [...usersList, newUser];
@@ -422,18 +545,53 @@ export default function FluidHEDashboard() {
     return () => clearTimeout(timer);
   }, [otpResendCountdown]);
 
-  // ─── DEVELOPER HARDWARE CALIBRATION & MODBUS STATES ───
-  const [modbusPort, setModbusPort] = useState<string>('/dev/ttyUSB0 (RS485 Baud 9600 8N1)');
-  const [mqttBroker, setMqttBroker] = useState<string>('mqtt://iot.uad.ac.id:1883 (Topic: uad/chemeng/he)');
-  const [tempOffset, setTempOffset] = useState<number>(0.0);
-  const [pressOffset, setPressOffset] = useState<number>(0.0);
-
-  // ─── REAL CCTV & IP CAMERA STATES ───
+  // ─── REAL CCTV & IP CAMERA STATES (EZVIZ C6N FULL INTEGRATION) ───
   const [selectedCamera, setSelectedCamera] = useState<'cam1' | 'cam2' | 'cam3'>('cam1');
   const [cctvRecording, setCctvRecording] = useState<boolean>(true);
-  const [cctvIpUrl, setCctvIpUrl] = useState<string>('rtsp://192.168.1.105:554/live/he_rig');
+  const [cctvIpUrl, setCctvIpUrl] = useState<string>('http://localhost:8889/stream.html?src=he_cctv');
+  const [cctvStreamSource, setCctvStreamSource] = useState<'local' | 'custom' | 'demo'>('local');
   const [isEditingCctvUrl, setIsEditingCctvUrl] = useState<boolean>(false);
-  const [tempCctvUrl, setTempCctvUrl] = useState<string>('rtsp://192.168.1.105:554/live/he_rig');
+  const [tempCctvUrl, setTempCctvUrl] = useState<string>('http://localhost:8889/stream.html?src=he_cctv');
+  
+  // EZVIZ Mobile App Style Controls
+  const [cctvAudioMuted, setCctvAudioMuted] = useState<boolean>(true);
+  const [cctvVolume, setCctvVolume] = useState<number>(85);
+  const [cctvMicActive, setCctvMicActive] = useState<boolean>(false);
+  const [cctvDefinition, setCctvDefinition] = useState<'1080p' | '720p' | 'auto'>('1080p');
+  const [isPtzDrawerOpen, setIsPtzDrawerOpen] = useState<boolean>(false);
+  const [ptzSpeed, setPtzSpeed] = useState<number>(60);
+  const [ptzMoving, setPtzMoving] = useState<string | null>(null);
+  
+  // Digital Interactive PTZ States (Scale & Viewport Pan)
+  const [digitalZoom, setDigitalZoom] = useState<number>(1.0);
+  const [digitalPanX, setDigitalPanX] = useState<number>(0);
+  const [digitalPanY, setDigitalPanY] = useState<number>(0);
+
+  const [isManualRecording, setIsManualRecording] = useState<boolean>(false);
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [cctvToast, setCctvToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
+  // ─── WEBRTC NATIVE VIDEO PLAYER REFS & STATES ───
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioTransceiverRef = useRef<RTCRtpTransceiver | null>(null);
+  const webrtcStreamRef = useRef<MediaStream | null>(null);
+  const [webrtcConnected, setWebrtcConnected] = useState<boolean>(false);
+  const [webrtcError, setWebrtcError] = useState<string | null>(null);
+  const [activeMediaTab, setActiveMediaTab] = useState<'all' | 'snapshot' | 'video'>('all');
+  const [previewMediaItem, setPreviewMediaItem] = useState<{ id: string; type: 'snapshot' | 'video'; title: string; timestamp: string; url?: string; thumbnail?: string; metadata?: any } | null>(null);
+  const [cctvMediaList, setCctvMediaList] = useState<Array<{ id: string; type: 'snapshot' | 'video'; title: string; timestamp: string; url?: string; thumbnail?: string; metadata?: any }>>([
+    {
+      id: 'snap-demo-1',
+      type: 'snapshot',
+      title: 'Snapshot Kalibrasi Suhu Rig HE',
+      timestamp: '18/08/2026 19:25:48 WIB',
+      url: '',
+      metadata: { ti1: 25.0, ti2: 25.0, ti3: 25.0, ti4: 25.0, flow: 0.0 }
+    }
+  ]);
 
   // ─── DATA LOG FILTER STATES (INCLUDES 2s, 30s INTERVAL) ───
   const [logSearchQuery, setLogSearchQuery] = useState<string>('');
@@ -771,6 +929,373 @@ export default function FluidHEDashboard() {
     setResetStep('VERIFY_OTP');
   };
 
+  // ─── CCTV MANUAL RECORDING TIMER & HANDLERS ───
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isManualRecording) {
+      interval = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isManualRecording]);
+
+  // ─── WEBRTC CONNECTION TO go2rtc ───
+  const connectWebRTC = async () => {
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    setWebrtcConnected(false);
+    setWebrtcError(null);
+
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcRef.current = pc;
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      const audioTransceiver = pc.addTransceiver('audio', { direction: 'recvonly' });
+      audioTransceiverRef.current = audioTransceiver;
+
+      pc.ontrack = (event) => {
+        if (event.streams[0] && videoRef.current) {
+          videoRef.current.srcObject = event.streams[0];
+          webrtcStreamRef.current = event.streams[0];
+          setWebrtcConnected(true);
+          setWebrtcError(null);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'connected') {
+          setWebrtcConnected(true);
+          setWebrtcError(null);
+        } else if (state === 'failed') {
+          setWebrtcConnected(false);
+          setWebrtcError('Koneksi WebRTC gagal. Pastikan kamera dan go2rtc aktif.');
+        } else if (state === 'disconnected' || state === 'closed') {
+          setWebrtcConnected(false);
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') return resolve();
+        const handler = () => {
+          if (pc.iceGatheringState === 'complete') {
+            pc.removeEventListener('icegatheringstatechange', handler);
+            resolve();
+          }
+        };
+        pc.addEventListener('icegatheringstatechange', handler);
+        setTimeout(resolve, 3000);
+      });
+
+      const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+      let resp: Response | null = null;
+      try {
+        resp = await fetch(`http://${host}:8889/api/webrtc?src=he_cctv`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: pc.localDescription?.sdp,
+        });
+      } catch (fErr) {
+        if (host !== 'localhost') {
+          resp = await fetch('http://localhost:8889/api/webrtc?src=he_cctv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: pc.localDescription?.sdp,
+          });
+        } else {
+          throw fErr;
+        }
+      }
+
+      if (!resp || !resp.ok) throw new Error(`Server go2rtc error: HTTP ${resp?.status || 'Unknown'}`);
+
+      const answer = await resp.text();
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }));
+    } catch (err: any) {
+      console.error('WebRTC connect error:', err);
+      setWebrtcError(err?.message || 'Gagal menyambung ke kamera via WebRTC');
+      setWebrtcConnected(false);
+    }
+  };
+
+  useEffect(() => {
+    if (cctvStreamSource === 'local') {
+      connectWebRTC();
+    }
+    return () => {
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cctvStreamSource]);
+
+  // Sync audio mute with video element — uses ref to bypass browser autoplay restrictions
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = cctvAudioMuted;
+      if (!cctvAudioMuted) {
+        videoRef.current.volume = cctvVolume / 100;
+        // Force play to resume audio after unmuting
+        videoRef.current.play().catch(() => {});
+      }
+    }
+  }, [cctvAudioMuted, cctvVolume]);
+
+  // Sync volume with video element
+  useEffect(() => {
+    if (videoRef.current && !cctvAudioMuted) {
+      videoRef.current.volume = cctvVolume / 100;
+    }
+  }, [cctvVolume, cctvAudioMuted]);
+
+  const triggerCctvToast = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    setCctvToast({ message, type });
+    setTimeout(() => setCctvToast(null), 3500);
+  };
+
+  const handlePtzAction = async (action: string) => {
+    setPtzMoving(action);
+
+    const actionLabels: Record<string, string> = {
+      up: '⬆️ Memutar Fisik Kamera ke Atas',
+      down: '⬇️ Memutar Fisik Kamera ke Bawah',
+      left: '⬅️ Memutar Fisik Kamera ke Kiri',
+      right: '➡️ Memutar Fisik Kamera ke Kanan',
+      zoomIn: '🔍 Zoom In Lensa Kamera',
+      zoomOut: '🔍 Zoom Out Lensa Kamera',
+      center: '🔄 Memutar Fisik Kamera ke Posisi Awal',
+    };
+
+    triggerCctvToast(actionLabels[action] || `🎮 Perintah PTZ: ${action.toUpperCase()}`, 'info');
+
+    try {
+      const res = await fetch('/api/cctv/ptz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, speed: ptzSpeed })
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerCctvToast(`✅ Motor Fisik Kamera Berputar: ${action.toUpperCase()}`, 'success');
+      }
+    } catch (err) {
+      console.warn('PTZ Background Dispatch:', err);
+    } finally {
+      setTimeout(() => setPtzMoving(null), 600);
+    }
+  };
+
+  const handlePtzPreset = async (presetTitle: string, presetKey: string) => {
+    triggerCctvToast(`🎯 Mengarahkan Fisik Kamera ke: ${presetTitle}`, 'info');
+    try {
+      const res = await fetch('/api/cctv/ptz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: presetKey, speed: ptzSpeed })
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerCctvToast(`✅ Kamera Mengarah ke: ${presetTitle}`, 'success');
+      }
+    } catch (err) {
+      console.warn('PTZ Preset Dispatch:', err);
+    }
+  };
+
+  const handleTakeSnapshot = () => {
+    const video = videoRef.current;
+    if (!video || !webrtcConnected) {
+      triggerCctvToast('⚠️ Tidak dapat mengambil snapshot — kamera belum terhubung', 'warning');
+      return;
+    }
+
+    const timeStr = new Date().toLocaleTimeString('id-ID');
+    const dateStr = new Date().toLocaleDateString('id-ID');
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 1920;
+      canvas.height = video.videoHeight || 1080;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw current video frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Add watermark overlay bar
+      const barHeight = 56;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+      ctx.font = 'bold 18px monospace';
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(`FluidHE Lab CCTV \u2022 ${dateStr} ${timeStr} WIB`, 16, canvas.height - 32);
+      ctx.font = '14px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`TI1: ${latestData.ti1}\u00b0C | TI2: ${latestData.ti2}\u00b0C | TI3: ${latestData.ti3}\u00b0C | TI4: ${latestData.ti4}\u00b0C | FC1: ${latestData.fc1} L/m`, 16, canvas.height - 10);
+
+      const dataUrl = canvas.toDataURL('image/png');
+
+      const newSnap = {
+        id: 'snap-' + Date.now(),
+        type: 'snapshot' as const,
+        title: `Snapshot Lab HE (${timeStr})`,
+        timestamp: `${dateStr} ${timeStr} WIB`,
+        url: dataUrl,
+        metadata: {
+          ti1: latestData.ti1,
+          ti2: latestData.ti2,
+          ti3: latestData.ti3,
+          ti4: latestData.ti4,
+          flow: latestData.fc1,
+          heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+        }
+      };
+      setCctvMediaList((prev) => [newSnap, ...prev]);
+      triggerCctvToast('\ud83d\udcf8 Snapshot berhasil diambil dari kamera & disimpan ke Galeri!', 'success');
+    } catch (err) {
+      console.error('Snapshot capture error:', err);
+      triggerCctvToast('\u26a0\ufe0f Gagal mengambil snapshot dari kamera', 'warning');
+    }
+  };
+
+  const handleToggleManualRecord = () => {
+    if (!isManualRecording) {
+      // START recording
+      const stream = webrtcStreamRef.current;
+      if (!stream || !webrtcConnected) {
+        triggerCctvToast('\u26a0\ufe0f Tidak dapat merekam — kamera belum terhubung', 'warning');
+        return;
+      }
+
+      try {
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : MediaRecorder.isTypeSupported('video/webm')
+          ? 'video/webm'
+          : '';
+
+        if (!mimeType) {
+          triggerCctvToast('\u26a0\ufe0f Browser tidak mendukung perekaman video', 'warning');
+          return;
+        }
+
+        recordedChunksRef.current = [];
+        const recorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.start(1000);
+        setIsManualRecording(true);
+        triggerCctvToast('\ud83d\udd34 Perekaman video live dimulai...', 'warning');
+      } catch (err) {
+        console.error('MediaRecorder error:', err);
+        triggerCctvToast('\u26a0\ufe0f Gagal memulai perekaman video', 'warning');
+      }
+    } else {
+      // STOP recording
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = () => {
+          const dur = recordingSeconds;
+          const timeStr = new Date().toLocaleTimeString('id-ID');
+          const dateStr = new Date().toLocaleDateString('id-ID');
+          const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+          const videoUrl = URL.createObjectURL(blob);
+
+          const newVideo = {
+            id: 'rec-' + Date.now(),
+            type: 'video' as const,
+            title: `Rekaman Lab HE (${dur}s)`,
+            timestamp: `${dateStr} ${timeStr} WIB`,
+            url: videoUrl,
+            metadata: {
+              ti1: latestData.ti1,
+              ti2: latestData.ti2,
+              ti3: latestData.ti3,
+              ti4: latestData.ti4,
+              flow: latestData.fc1,
+              duration: `${dur} Detik`,
+              heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+            }
+          };
+          setCctvMediaList((prev) => [newVideo, ...prev]);
+          triggerCctvToast(`\ud83d\udcbe Rekaman video (${dur}s) berhasil disimpan ke Galeri!`, 'success');
+        };
+        recorder.stop();
+      }
+      setIsManualRecording(false);
+      mediaRecorderRef.current = null;
+    }
+  };
+
+  const handleToggleMic = async () => {
+    if (!cctvMicActive) {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('BROWSER_INSECURE_CONTEXT');
+        }
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micStreamRef.current = micStream;
+        const audioTrack = micStream.getAudioTracks()[0];
+
+        if (audioTransceiverRef.current) {
+          await audioTransceiverRef.current.sender.replaceTrack(audioTrack);
+        } else if (pcRef.current) {
+          pcRef.current.addTrack(audioTrack, micStream);
+        }
+
+        setCctvMicActive(true);
+        triggerCctvToast('🎙️ Mikrofon Interkom AKTIF — Bicara ke speaker CCTV', 'success');
+      } catch (err: any) {
+        console.error('Mic access error:', err);
+        if (err?.message === 'BROWSER_INSECURE_CONTEXT') {
+          triggerCctvToast('⚠️ Browser memblokir mikrofon pada IP HTTP non-lokal. Buka lewat http://localhost:3000 atau aktifkan SSL/HTTPS.', 'warning');
+        } else if (err?.name === 'NotAllowedError') {
+          triggerCctvToast('⚠️ Akses mikrofon ditolak browser. Izinkan akses mikrofon di ikon gembok URL browser.', 'warning');
+        } else {
+          triggerCctvToast(`⚠️ Gagal mengaktifkan mikrofon (${err?.name || err?.message || 'Error'})`, 'warning');
+        }
+      }
+    } else {
+      if (audioTransceiverRef.current) {
+        try { await audioTransceiverRef.current.sender.replaceTrack(null); } catch {}
+      }
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+      }
+      setCctvMicActive(false);
+      triggerCctvToast('🔇 Mikrofon Interkom dinonaktifkan', 'info');
+    }
+  };
+
+
+  const handleDeleteMediaItem = (id: string) => {
+    if (!window.confirm('Hapus file media ini dari galeri?')) return;
+    setCctvMediaList((prev) => prev.filter((item) => item.id !== id));
+    triggerCctvToast('🗑️ Media dihapus', 'info');
+  };
+
   const handleVerifyOtp = (e?: React.SyntheticEvent) => {
     if (e) e.preventDefault();
     setResetError(null);
@@ -859,7 +1384,7 @@ export default function FluidHEDashboard() {
     if (e) e.preventDefault();
     setLoginError(null);
 
-    const email = (loginEmail || (selectedDemoRole === 'admin' ? 'dwimeliantiistiqomah55@gmail.com' : selectedDemoRole === 'developer' ? 'dev@uad.ac.id' : 'dwi.melianti@mhs.itenas.ac.id')).toLowerCase().trim();
+    const email = (loginEmail || (selectedDemoRole === 'admin' ? 'dwimeliantiistiqomah55@gmail.com' : 'dwi.melianti@mhs.itenas.ac.id')).toLowerCase().trim();
 
     // STRICT: Password is required to log in!
     if (!loginPassword || !loginPassword.trim()) {
@@ -904,6 +1429,31 @@ export default function FluidHEDashboard() {
       return;
     }
 
+    // 1. SINGLE ACTIVE SESSION LOCK CHECK (Hanya 1 Akun Aktif per Sesi Waktu)
+    try {
+      const storedActiveStr = localStorage.getItem('fluidhe_active_session');
+      if (storedActiveStr) {
+        const storedActive = JSON.parse(storedActiveStr);
+        const now = Date.now();
+        const isStale = (now - storedActive.lastHeartbeat) > 15000;
+        if (!isStale && storedActive.email.toLowerCase() !== email.toLowerCase()) {
+          setLoginError(`🚫 AKSES DITOLAK (KONFLIK SESI): Sesi saat ini sedang aktif digunakan oleh "${storedActive.name}" (${storedActive.email}). Untuk mencegah bentrokan kendali hardware, sistem hanya mengizinkan 1 akun aktif dalam 1 waktu. Harap minta user tersebut logout terlebih dahulu.`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Session lock check error:', err);
+    }
+
+    // 2. JADWAL AKSES HARI & JAM CHECK (Schedule-Based Access Control)
+    if (found) {
+      const scheduleStatus = validateScheduleAccess(found);
+      if (!scheduleStatus.allowed) {
+        setLoginError(`⏰ AKSES DITOLAK (DILUAR JADWAL LAB): ${scheduleStatus.reason}`);
+        return;
+      }
+    }
+
     if (found) {
       setCurrentUser({
         name: found.name,
@@ -913,12 +1463,6 @@ export default function FluidHEDashboard() {
       if (found.role === 'operator') {
         setOperatorSessionRemaining(operatorSessionLimit * 60);
       }
-    } else if (selectedDemoRole === 'developer' || email.includes('dev')) {
-      setCurrentUser({
-        name: 'Tim Developer Software & IoT',
-        email: email,
-        role: 'developer'
-      });
     } else if (selectedDemoRole === 'admin' || email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id') {
       setCurrentUser({
         name: 'Dwi Melianti (Admin Utama / Dosen)',
@@ -935,6 +1479,16 @@ export default function FluidHEDashboard() {
     }
     setIsLoggedIn(true);
     setActiveTab('dashboard');
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('fluidhe_active_session');
+    } catch (err) {
+      console.error(err);
+    }
+    setActiveSession(null);
+    setIsLoggedIn(false);
   };
 
   // ─── EMERGENCY STOP HANDLER ───
@@ -1001,129 +1555,16 @@ export default function FluidHEDashboard() {
     return queryFiltered;
   }, [telemetryHistory, logSearchQuery, logInterval, dateFilter]);
 
-  // ─── STYLED EXCEL & XLSX EXPORT HANDLERS ───
+  // ─── CLOUD DRIVE AUTO-SYNC & FLASHDISK DISABLE HANDLERS ───
   const getFormattedDateStr = (date: Date) => {
     const d = date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const t = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/:/g, '.');
     return `${d}, ${t} WIB`;
   };
 
-  const exportExcelXLSX = () => {
-    const now = new Date();
-    const printedAt = getFormattedDateStr(now);
-    const dateToday = getFormattedDateStr(now).split(',')[0];
-    const dataSet = filteredLogsData.length > 0 ? filteredLogsData : telemetryHistory;
-    const dateRangeStart = dataSet.length > 0 ? `${dateToday}, ${dataSet[0].timestamp} WIB` : printedAt;
-    const dateRangeEnd = dataSet.length > 0 ? `${dateToday}, ${dataSet[dataSet.length - 1].timestamp} WIB` : printedAt;
-
-    const metadataRows = [
-      ['LAPORAN MONITORING HEAT EXCHANGER UAD'],
-      ['Sistem: Heat Exchanger Thermal Analytics & IoT Control'],
-      [`Interval Sampling: ${logInterval}`],
-      [`Rentang Data: ${dateRangeStart} s.d. ${dateRangeEnd}`],
-      [],
-      ['Waktu (Timestamp)', 'T1 - Hot Inlet (°C)', 'T2 - Hot Outlet (°C)', 'T3 - Cold Inlet (°C)', 'T4 - Cold Outlet (°C)', 'Heater 1', 'Heater 2', 'Mode Aliran']
-    ];
-
-    const dataRows = dataSet.map((d) => [
-      `${dateToday}, ${d.timestamp} WIB`,
-      Number(d.ti1.toFixed(2)),
-      Number(d.ti2.toFixed(2)),
-      Number(d.ti3.toFixed(2)),
-      Number(d.ti4.toFixed(2)),
-      d.heater1Active ? 'ON' : 'OFF',
-      d.heater2Active ? 'ON' : 'OFF',
-      d.mode
-    ]);
-
-    const worksheetData = [...metadataRows, ...dataRows];
-    const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-
-    ws['!cols'] = [
-      { wch: 30 },
-      { wch: 22 },
-      { wch: 22 },
-      { wch: 22 },
-      { wch: 22 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 18 }
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Temperature Logs');
-
-    const fileName = `export_history_${logInterval}_${now.toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  };
-
-  const exportStyledExcelHTML = () => {
-    const now = new Date();
-    const printedAt = getFormattedDateStr(now);
-    const dateToday = getFormattedDateStr(now).split(',')[0];
-    const dataSet = filteredLogsData.length > 0 ? filteredLogsData : telemetryHistory;
-    const dateRangeStart = dataSet.length > 0 ? `${dateToday}, ${dataSet[0].timestamp} WIB` : printedAt;
-    const dateRangeEnd = dataSet.length > 0 ? `${dateToday}, ${dataSet[dataSet.length - 1].timestamp} WIB` : printedAt;
-
-    let html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
-          .title { font-size: 14pt; font-weight: bold; color: #000000; }
-          .meta { font-size: 10pt; color: #1E293B; }
-          th { background-color: #0B2545; color: #FFFFFF; font-size: 10pt; font-weight: bold; padding: 8px 12px; border: 1px solid #000000; text-align: center; }
-          td { font-size: 10pt; padding: 6px 12px; border: 1px solid #CBD5E1; text-align: center; }
-          .even { background-color: #F8FAFC; }
-          .status-on { color: #16A34A; font-weight: bold; }
-          .status-off { color: #DC2626; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <tr><td colspan="8" class="title" style="text-align:left;">LAPORAN MONITORING HEAT EXCHANGER UAD</td></tr>
-          <tr><td colspan="8" class="meta" style="text-align:left;">Sistem: Heat Exchanger Thermal Analytics (Interval: ${logInterval})</td></tr>
-          <tr><td colspan="8" class="meta" style="text-align:left;">Rentang Data: ${dateRangeStart} s.d. ${dateRangeEnd}</td></tr>
-          <tr><td colspan="8"></td></tr>
-          <tr>
-            <th>Waktu (Timestamp)</th>
-            <th>T1 - Hot Inlet (°C)</th>
-            <th>T2 - Hot Outlet (°C)</th>
-            <th>T3 - Cold Inlet (°C)</th>
-            <th>T4 - Cold Outlet (°C)</th>
-            <th>Heater 1</th>
-            <th>Heater 2</th>
-            <th>Mode Aliran</th>
-          </tr>
-    `;
-
-    dataSet.forEach((d, idx) => {
-      const bgClass = idx % 2 === 1 ? 'even' : '';
-      html += `
-        <tr class="${bgClass}">
-          <td style="text-align:left;">${dateToday}, ${d.timestamp} WIB</td>
-          <td>${d.ti1.toFixed(2)}</td>
-          <td>${d.ti2.toFixed(2)}</td>
-          <td>${d.ti3.toFixed(2)}</td>
-          <td>${d.ti4.toFixed(2)}</td>
-          <td class="${d.heater1Active ? 'status-on' : 'status-off'}">${d.heater1Active ? 'ON' : 'OFF'}</td>
-          <td class="${d.heater2Active ? 'status-on' : 'status-off'}">${d.heater2Active ? 'ON' : 'OFF'}</td>
-          <td>${d.mode}</td>
-        </tr>
-      `;
-    });
-
-    html += `</table></body></html>`;
-
-    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `export_history_${logInterval}_${now.toISOString().slice(0, 10)}.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleCloudDriveAccess = () => {
+    setIsCloudDriveModalOpen(true);
+    setCloudLastSyncTime(new Date().toLocaleTimeString('id-ID'));
   };
 
   const exportPDFReport = () => {
@@ -1140,9 +1581,20 @@ export default function FluidHEDashboard() {
       email: newUserEmail,
       role: newUserRole,
       status: 'Active',
-      lastLogin: 'Baru saja'
+      lastLogin: 'Baru saja',
+      isScheduleRestricted: newUserRole === 'operator' ? newUserRestricted : false,
+      allowedStartDate: newUserStartDate,
+      allowedEndDate: newUserEndDate,
+      allowedStartTime: newUserStartTime,
+      allowedEndTime: newUserEndTime
     };
-    setUsersList([...usersList, newUser]);
+    const updatedUsers = [...usersList, newUser];
+    setUsersList(updatedUsers);
+    try {
+      localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updatedUsers));
+    } catch (err) {
+      console.error(err);
+    }
     setNewUserName('');
     setNewUserEmail('');
     setShowAddUserModal(false);
@@ -1265,7 +1717,7 @@ export default function FluidHEDashboard() {
               <circle cx="180" cy="45" r="14" fill="#FFFFFF" stroke="#0284C7" strokeWidth="2.5" />
               <text x="180" y="49" textAnchor="middle" className="text-[9px] font-extrabold fill-[#0284C7]">P1</text>
               <rect x="155" y="18" width="50" height="16" rx="4" fill="#F1F5F9" stroke="#0284C7" strokeWidth="1" />
-              <text x="180" y="30" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi1} bar</text>
+              <text x="180" y="30" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi1} barg</text>
             </g>
 
             {/* SV1 (NC) Solenoid Valve Badge */}
@@ -1408,14 +1860,14 @@ export default function FluidHEDashboard() {
               <circle cx="550" cy="415" r="14" fill="#FFFFFF" stroke="#0284C7" strokeWidth="2.5" />
               <text x="550" y="419" textAnchor="middle" className="text-[9px] font-extrabold fill-[#0284C7]">P2</text>
               <rect x="525" y="432" width="50" height="16" rx="4" fill="#F1F5F9" stroke="#0284C7" strokeWidth="1" />
-              <text x="550" y="444" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi2} bar</text>
+              <text x="550" y="444" textAnchor="middle" className="text-[9px] font-extrabold fill-slate-800">{latestData.pi2} barg</text>
             </g>
 
             {/* Delta P Indicator */}
             <g className="cursor-pointer">
               <rect x="340" y="415" width="130" height="24" rx="8" fill="#EFF6FF" stroke="#3B82F6" strokeWidth="1.5" />
               <text x="405" y="431" textAnchor="middle" className="text-[10px] font-extrabold fill-blue-900">
-                ΔP (P1 - P2) = {deltaPHot} bar
+                ΔP (P1 - P2) = {deltaPHot} barg
               </text>
             </g>
           </svg>
@@ -1447,7 +1899,7 @@ export default function FluidHEDashboard() {
     );
   };
 
-  // ─── RENDER: LOGIN SCREEN (SUPPORTING DEVELOPER, ADMIN, OPERATOR ROLES) ───
+  // ─── RENDER: LOGIN SCREEN (SUPPORTING ADMIN & OPERATOR ROLES) ───
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-between p-3.5 sm:p-6 md:p-8 relative overflow-hidden font-sans">
@@ -1485,8 +1937,8 @@ export default function FluidHEDashboard() {
         <main className="max-w-md w-full mx-auto my-auto py-4 sm:py-8 z-10">
           <div className="asklepios-card p-5 sm:p-8 bg-white/95 backdrop-blur-md shadow-2xl border border-slate-200/80 rounded-3xl">
             <div className="text-center mb-5 sm:mb-6">
-              <div className="inline-flex p-2 bg-white rounded-2xl mb-2.5 sm:mb-3 border border-slate-200/80 shadow-md w-14 h-14 sm:w-16 sm:h-16 items-center justify-center">
-                <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
+              <div className="inline-flex p-2.5 bg-white rounded-2xl mb-3 border border-slate-200/80 shadow-md w-20 h-20 sm:w-24 sm:h-24 items-center justify-center">
+                <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain scale-110" />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900">Masuk ke Sistem</h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">Laboratorium Teknik Kimia & IoT Industri UAD</p>
@@ -1958,7 +2410,7 @@ export default function FluidHEDashboard() {
               </div>
               <div className="flex justify-between text-slate-700">
                 <span>Pressure Drop Hot Fluid (ΔP):</span>
-                <strong className={deltaPHot > deltaPMaxThreshold ? 'text-red-700 font-bold' : ''}>{deltaPHot} bar</strong>
+                <strong className={deltaPHot > deltaPMaxThreshold ? 'text-red-700 font-bold' : ''}>{deltaPHot} barg</strong>
               </div>
             </div>
 
@@ -2056,9 +2508,60 @@ export default function FluidHEDashboard() {
                 >
                   <option value="operator">Operator (Mahasiswa - Monitoring & Control)</option>
                   <option value="admin">Admin (Dosen / KaLab - Akses Penuh + User Mgmt)</option>
-                  <option value="developer">Developer (Akses Source Code & Hardware Config)</option>
                 </select>
               </div>
+
+              {newUserRole === 'operator' && (
+                <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 space-y-3">
+                  <div className="flex items-center justify-between bg-white p-2.5 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-amber-600" />
+                      <div>
+                        <span className="block text-xs font-bold text-slate-800">Batasi Jadwal Login</span>
+                        <span className="block text-[10px] text-slate-500">Hanya bisa login pada jadwal tertentu</span>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={newUserRestricted} onChange={(e) => setNewUserRestricted(e.target.checked)} />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                  </div>
+
+                  {newUserRestricted && (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10.5px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-amber-600" /> Mulai Tanggal
+                          </label>
+                          <input type="date" value={newUserStartDate} onChange={(e) => setNewUserStartDate(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800" />
+                        </div>
+                        <div>
+                          <label className="block text-[10.5px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-amber-600" /> S.d Tanggal
+                          </label>
+                          <input type="date" value={newUserEndDate} onChange={(e) => setNewUserEndDate(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10.5px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-sky-600" /> Jam Mulai
+                          </label>
+                          <input type="time" value={newUserStartTime} onChange={(e) => setNewUserStartTime(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800" />
+                        </div>
+                        <div>
+                          <label className="block text-[10.5px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-sky-600" /> Jam Selesai
+                          </label>
+                          <input type="time" value={newUserEndTime} onChange={(e) => setNewUserEndTime(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-3 flex gap-2">
                 <button
@@ -2092,8 +2595,8 @@ export default function FluidHEDashboard() {
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="w-7 h-7 sm:w-10 sm:h-10 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-sm border border-slate-200/80 shrink-0">
-            <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain" />
+          <div className="w-9 h-9 sm:w-12 sm:h-12 relative flex items-center justify-center p-1 bg-white rounded-xl shadow-sm border border-slate-200/80 shrink-0">
+            <img src="/uad-logo.png" alt="Logo UAD" className="w-full h-full object-contain scale-105" />
           </div>
           <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
@@ -2183,19 +2686,17 @@ export default function FluidHEDashboard() {
           <div className="flex items-center gap-1 sm:gap-2 pl-1 sm:pl-2 border-l border-slate-200 shrink-0">
             <div className="text-right hidden lg:block">
               <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
-              <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${currentUser.role === 'developer'
-                ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                : currentUser.role === 'admin'
+              <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${currentUser.role === 'admin'
                   ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                  : 'bg-slate-100 text-slate-600'
+                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                 }`}>
                 {currentUser.role}
               </span>
             </div>
 
             <button
-              onClick={() => setIsLoggedIn(false)}
-              title="Keluar"
+              onClick={handleLogout}
+              title="Keluar Sesi"
               className="p-1 sm:p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
             >
               <LogOut className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -2308,7 +2809,7 @@ export default function FluidHEDashboard() {
               Administrasi & Dev
             </div>
 
-            {currentUser.role === 'admin' || currentUser.role === 'developer' ? (
+            {currentUser.role === 'admin' ? (
               <button
                 onClick={() => {
                   setActiveTab('users');
@@ -2332,23 +2833,6 @@ export default function FluidHEDashboard() {
                 <span className="text-[10px]">Terbatas</span>
               </div>
             )}
-
-            {/* Developer Control Tab Button */}
-            <button
-              onClick={() => {
-                setActiveTab('developer');
-                setIsSidebarOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all mt-1 ${activeTab === 'developer'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-            >
-              <div className="flex items-center gap-3">
-                <Code className="w-4 h-4 text-purple-500" /> Developer Control
-              </div>
-              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-extrabold">Dev</span>
-            </button>
           </div>
 
           <div className="mt-8 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs space-y-1.5">
@@ -2501,11 +2985,11 @@ export default function FluidHEDashboard() {
                   </div>
                   <div className="mt-2 flex items-baseline justify-between">
                     <span className="text-xl font-extrabold text-slate-900">{latestData.pi1} / {latestData.pi2}</span>
-                    <span className="text-xs font-semibold text-slate-500">bar</span>
+                    <span className="text-xs font-semibold text-slate-500">barg</span>
                   </div>
                   <div className="mt-2 text-[11px] flex justify-between items-center p-1 bg-slate-50 rounded-lg">
                     <span className="text-slate-500">ΔP Hot:</span>
-                    <strong className="text-sky-700">{deltaPHot} bar</strong>
+                    <strong className="text-sky-700">{deltaPHot} barg</strong>
                   </div>
                 </div>
 
@@ -2521,11 +3005,11 @@ export default function FluidHEDashboard() {
                   </div>
                   <div className="mt-2 flex items-baseline justify-between">
                     <span className="text-xl font-extrabold text-slate-900">{latestData.pi3} / {latestData.pi4}</span>
-                    <span className="text-xs font-semibold text-slate-500">bar</span>
+                    <span className="text-xs font-semibold text-slate-500">barg</span>
                   </div>
                   <div className="mt-2 text-[11px] flex justify-between items-center p-1 bg-slate-50 rounded-lg">
                     <span className="text-slate-500">ΔP Cold:</span>
-                    <strong className="text-cyan-700">{deltaPCold} bar</strong>
+                    <strong className="text-cyan-700">{deltaPCold} barg</strong>
                   </div>
                 </div>
 
@@ -3010,7 +3494,7 @@ export default function FluidHEDashboard() {
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Tekanan (PI1)</span>
                       <strong className="text-sky-600 font-extrabold text-sm sm:text-base">
-                        {supabaseTelemetry ? supabaseTelemetry.pressure.toFixed(2) : latestData.pi1.toFixed(2)} bar
+                        {supabaseTelemetry ? supabaseTelemetry.pressure.toFixed(2) : latestData.pi1.toFixed(2)} barg
                       </strong>
                     </div>
 
@@ -3349,239 +3833,692 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* TAB 3: CCTV LIVE MONITORING (REAL IP CCTV SYSTEM) */}
+          {/* TAB 3: CCTV LIVE MONITORING (MODERN MINIMALIST INDUSTRIAL DESIGN) */}
           {activeTab === 'cctv' && (
             <div className="space-y-6">
-              <div className="asklepios-card p-6 bg-white shadow-xl rounded-3xl border border-slate-200">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5 border-b border-slate-100 pb-4">
-                  <div>
-                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
-                      <Video className="w-6 h-6 text-sky-600" /> Live CCTV Monitoring - Laboratorium HE UAD
+              
+              {/* Header Bar: Clean & Minimalist */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                      CCTV Live Monitoring — Heat Exchanger Lab
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Integrasi Kamera CCTV(IP Camera / RTSP / HLS Live Stream Rig Shell & Tube)</p>
                   </div>
-
-                  {/* Channel Switchers */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCamera('cam1');
-                        setCctvIpUrl('rtsp://192.168.1.105:554/live/he_rig');
-                      }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam1'
-                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                    >
-                      <Video className="w-3.5 h-3.5" /> Saluran 1: Rig Heat Exchanger
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCamera('cam2');
-                        setCctvIpUrl('rtsp://192.168.1.106:554/live/storage_tank');
-                      }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam2'
-                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                    >
-                      <Video className="w-3.5 h-3.5" /> Saluran 2: Tangki Fluida
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCamera('cam3');
-                        setCctvIpUrl('rtsp://192.168.1.107:554/live/aux_valve');
-                      }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${selectedCamera === 'cam3'
-                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20 ring-2 ring-sky-300'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                    >
-                      <Video className="w-3.5 h-3.5" /> Saluran 3: Panel Valve Lab
-                    </button>
-                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    FluidHE IP Cam (1080p Full HD) • Transmisi RTSP Real-Time (0-Delay)
+                  </p>
                 </div>
 
-                {/* IP Camera URL Configuration Bar */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    <Server className="w-4 h-4 text-sky-600 shrink-0" />
-                    <span className="text-slate-500 font-semibold">Stream URL IP Camera:</span>
-                    <code className="px-2 py-0.5 bg-white rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 font-bold">
-                      {cctvIpUrl}
-                    </code>
-                  </div>
-
-                  {isEditingCctvUrl ? (
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <input
-                        type="text"
-                        value={tempCctvUrl}
-                        onChange={(e) => setTempCctvUrl(e.target.value)}
-                        placeholder="rtsp://192.168.1.x/live atau http://..."
-                        className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-                      />
-                      <button
-                        onClick={() => {
-                          setCctvIpUrl(tempCctvUrl);
-                          setIsEditingCctvUrl(false);
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0"
-                      >
-                        Simpan
-                      </button>
-                      <button
-                        onClick={() => setIsEditingCctvUrl(false)}
-                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold shrink-0"
-                      >
-                        Batal
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setTempCctvUrl(cctvIpUrl);
-                        setIsEditingCctvUrl(true);
-                      }}
-                      className="text-xs font-bold text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1 rounded-xl transition"
-                    >
-                      ⚙️ Ubah URL IP Camera
-                    </button>
-                  )}
+                {/* Channel Switchers: Minimalist Tabs */}
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCamera('cam1');
+                      handlePtzAction('rig');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam1'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Rig Shell & Tube
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCamera('cam2');
+                      handlePtzAction('tank');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam2'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Tangki Fluida
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCamera('cam3');
+                      handlePtzAction('valve');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam3'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Panel Valve
+                  </button>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* CCTV Live Stream Screen */}
-                  <div className="lg:col-span-2 relative bg-slate-950 rounded-3xl overflow-hidden shadow-xl aspect-video flex flex-col justify-between p-4 border border-slate-800">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center opacity-90 pointer-events-none">
-                      <div className="w-full h-full border border-sky-500/10 grid grid-cols-6 grid-rows-4" />
-                    </div>
-
-                    {/* Top Status Header inside CCTV player */}
-                    <div className="relative z-10 flex justify-between items-center text-xs text-white/90 font-mono">
-                      <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                        <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                        <span className="font-bold">
-                          {selectedCamera === 'cam1'
-                            ? '🔴 LIVE | CAM 01 - RIG HEAT EXCHANGER'
-                            : selectedCamera === 'cam2'
-                              ? '🔴 LIVE | CAM 02 - FLUID STORAGE TANK'
-                              : '🔴 LIVE | CAM 03 - VALVE & RIG CONTROL PANEL'}
+              {/* Main Monitoring Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Left (2 Cols): Live Video Canvas & Floating Quick Actions */}
+                <div className="lg:col-span-2 space-y-4">
+                  
+                  {/* Video Player Container */}
+                  <div
+                    id="cctv-player-container"
+                    className="relative bg-zinc-950 rounded-2xl overflow-hidden shadow-xl aspect-video flex flex-col justify-between p-4 border border-zinc-800 group"
+                  >
+                    
+                    {/* Top Floating Badges */}
+                    <div className="relative z-20 flex justify-between items-center text-xs text-white/90 font-mono pointer-events-none">
+                      <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-[11px] font-semibold tracking-wider">
+                          LIVE • {selectedCamera === 'cam1' ? 'RIG SHELL & TUBE' : selectedCamera === 'cam2' ? 'STORAGE TANK' : 'VALVE MANIFOLD'}
                         </span>
                       </div>
-                      <span className="bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 text-[11px]">
-                        {new Date().toLocaleDateString('id-ID')} • {new Date().toLocaleTimeString('id-ID')} WIB
-                      </span>
-                    </div>
 
-                    {/* Central Icon & Stream Info */}
-                    <div className="relative z-10 text-center my-auto space-y-2">
-                      <div className="inline-flex p-5 bg-sky-500/10 rounded-3xl border border-sky-400/20 text-sky-400 shadow-inner animate-pulse">
-                        <Video className="w-12 h-12" />
+                      <div className="flex items-center gap-2 pointer-events-auto">
+                        {cctvStreamSource === 'demo' && (
+                          <div className="bg-sky-600/90 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide">
+                            SIMULATED FEED
+                          </div>
+                        )}
+                        {isManualRecording && (
+                          <div className="flex items-center gap-1.5 bg-red-600/90 text-white px-2.5 py-0.5 rounded-full text-[11px] font-bold animate-pulse">
+                            <Disc className="w-3 h-3 animate-spin" />
+                            <span>REC {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:{String(recordingSeconds % 60).padStart(2, '0')}</span>
+                          </div>
+                        )}
+
+                        <div className="bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 text-[10px] font-semibold text-zinc-300">
+                          1080P
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-200 font-bold">
-                        {selectedCamera === 'cam1'
-                          ? 'Feed CCTV Fisik Lab: Rig Heat Exchanger Shell & Tube'
-                          : selectedCamera === 'cam2'
-                            ? 'Feed CCTV Fisik Lab: Tangki Penampung & Pompa Suplai'
-                            : 'Feed CCTV Fisik Lab: Panel Valve Solenoid & Auxiliary Rig'}
-                      </p>
-                      <p className="text-[11px] text-slate-400 font-mono">
-                        Protokol: RTSP / HLS • 1080p @ 30 FPS • H.264 Video Stream Active
-                      </p>
                     </div>
 
-                    {/* Bottom CCTV Controls */}
-                    <div className="relative z-10 flex justify-between items-center bg-black/70 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 mt-auto">
-                      <div className="flex items-center gap-2 text-white">
+                    {/* Toast Notification Pill */}
+                    {cctvToast && (
+                      <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 px-3.5 py-1.5 bg-zinc-900/95 border border-zinc-700 backdrop-blur-md text-white text-xs font-medium rounded-xl shadow-lg animate-fade-in flex items-center gap-2">
+                        <span>{cctvToast.message}</span>
+                      </div>
+                    )}
+
+                    {/* Video Stream Element */}
+                    <div className="absolute inset-0 z-10 w-full h-full flex items-center justify-center bg-black overflow-hidden rounded-2xl">
+                      {cctvStreamSource === 'demo' ? (
+                        <div className="flex flex-col items-center justify-center text-center p-6 space-y-3">
+                          <div className="w-14 h-14 rounded-full bg-sky-500/20 text-sky-400 flex items-center justify-center animate-pulse">
+                            <Video className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-white">Mode Simulasi Video CCTV Active</h4>
+                            <p className="text-xs text-zinc-400 max-w-sm mt-1">
+                              Server streaming RTSP (<code className="text-sky-300 font-mono">go2rtc</code> port 8889) belum aktif di komputer host.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCctvStreamSource('local');
+                              triggerCctvToast('Mencoba menyambung via WebRTC ke go2rtc...', 'info');
+                            }}
+                            className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-700 transition"
+                          >
+                            Sambung Ulang ke go2rtc (Port 8889)
+                          </button>
+                        </div>
+                      ) : cctvStreamSource === 'local' ? (
+                        <>
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted={cctvAudioMuted}
+                            className="w-full h-full object-contain rounded-2xl"
+                          />
+                          {!webrtcConnected && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 space-y-3 bg-black/90 z-20">
+                              {webrtcError ? (
+                                <>
+                                  <div className="w-14 h-14 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
+                                    <AlertTriangle className="w-7 h-7" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-sm font-bold text-white">Gagal Terhubung ke Kamera</h4>
+                                    <p className="text-xs text-zinc-400 max-w-sm mt-1">{webrtcError}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => connectWebRTC()}
+                                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl transition"
+                                  >
+                                    Coba Sambung Ulang
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setCctvStreamSource('demo'); triggerCctvToast('Beralih ke Mode Simulasi', 'info'); }}
+                                    className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs rounded-lg border border-zinc-700 transition"
+                                  >
+                                    Beralih ke Simulasi Feed
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="w-14 h-14 rounded-full bg-sky-500/20 text-sky-400 flex items-center justify-center animate-pulse">
+                                    <Video className="w-7 h-7" />
+                                  </div>
+                                  <p className="text-sm font-bold text-white">Menyambungkan ke Kamera via WebRTC...</p>
+                                  <p className="text-xs text-zinc-500 font-mono">go2rtc &bull; localhost:8889</p>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <iframe
+                          src={cctvIpUrl}
+                          className="w-full h-full border-0 rounded-2xl"
+                          allow="autoplay; encrypted-media; picture-in-picture; camera; microphone"
+                          allowFullScreen
+                          title="Live CCTV Feed"
+                        />
+                      )}
+                    </div>
+                    {/* Bottom Status & Floating Snapshot Action Bar */}
+                    <div className="relative z-20 flex justify-between items-center bg-black/60 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 mt-auto">
+                      <div className="flex items-center gap-2 text-white text-xs">
                         <button
                           type="button"
                           onClick={() => setCctvRecording(!cctvRecording)}
-                          className="p-1.5 hover:bg-white/10 rounded-lg transition"
-                          title={cctvRecording ? 'Jeda Perekaman' : 'Mulai Merekam'}
+                          className="p-1 hover:bg-white/10 rounded-md transition text-zinc-300 hover:text-white"
+                          title={cctvRecording ? 'Jeda Perekaman NVR' : 'Mulai Merekam NVR'}
                         >
-                          {cctvRecording ? <Pause className="w-4 h-4 text-emerald-400" /> : <Play className="w-4 h-4" />}
+                          {cctvRecording ? <Pause className="w-3.5 h-3.5 text-emerald-400" /> : <Play className="w-3.5 h-3.5" />}
                         </button>
-                        <span className="text-[11px] text-slate-300 font-medium">
-                          Status Perekaman: <strong>{cctvRecording ? 'Merekam Otomatis' : 'Jeda'}</strong>
+                        <span className="text-[11px] text-zinc-300 font-medium">
+                          NVR: <strong className="text-emerald-400">{cctvRecording ? '24/7 Aktif' : 'Jeda'}</strong>
                         </span>
+
+                        {cctvStreamSource === 'local' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCctvStreamSource('demo');
+                              triggerCctvToast('Mengalihkan ke Mode Simulasi Video Lab', 'success');
+                            }}
+                            className="ml-2 px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] hover:bg-amber-500/30 transition"
+                          >
+                            Refused to connect? Klik Beralih ke Simulasi Feed
+                          </button>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => alert('Snapshot gambar CCTV Lab berhasil diambil dan disimpan.')}
-                          title="Ambil Foto Snapshot"
-                          className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                          onClick={() => {
+                            const el = document.getElementById('cctv-player-container');
+                            if (el && !document.fullscreenElement) {
+                              el.requestFullscreen?.();
+                            } else if (document.exitFullscreen) {
+                              document.exitFullscreen();
+                            }
+                          }}
+                          className="p-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs transition"
+                          title="Layar Penuh"
                         >
-                          <Camera className="w-3.5 h-3.5" /> Snapshot
+                          <Maximize2 className="w-3.5 h-3.5 text-zinc-300" />
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Clean Quick Action Bar */}
+                  <div className="p-4 bg-zinc-900 text-white rounded-2xl border border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 pb-1 border-b border-zinc-800">
+                      <span className="font-semibold text-zinc-300">Kontrol Cepat Kamera</span>
+                      <span>IP Camera 360 Series</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTakeSnapshot}
+                        className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 transition text-zinc-200 text-xs font-medium gap-1"
+                      >
+                        <Camera className="w-4 h-4 text-sky-400" />
+                        <span className="text-[11px]">Snapshot</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleManualRecord}
+                        className={`flex flex-col items-center justify-center p-2.5 rounded-xl transition text-xs font-medium gap-1 ${isManualRecording
+                          ? 'bg-red-600 text-white'
+                          : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200'
+                        }`}
+                      >
+                        <Disc className={`w-4 h-4 ${isManualRecording ? 'animate-spin' : 'text-red-400'}`} />
+                        <span className="text-[11px]">{isManualRecording ? 'Stop Rekam' : 'Rekam Video'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextMuted = !cctvAudioMuted;
+                          setCctvAudioMuted(nextMuted);
+                          if (videoRef.current) {
+                            videoRef.current.muted = nextMuted;
+                            if (!nextMuted) {
+                              videoRef.current.volume = cctvVolume / 100;
+                              videoRef.current.play().catch((err) => console.log('Audio play error:', err));
+                            }
+                          }
+                          triggerCctvToast(!nextMuted ? '🔊 Suara CCTV AKTIF (Dengarkan Lab)' : '🔇 Suara CCTV Muted', 'info');
+                        }}
+                        className={`flex flex-col items-center justify-center p-2.5 rounded-xl transition text-xs font-medium gap-1 ${!cctvAudioMuted
+                          ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200'
+                        }`}
+                      >
+                        {!cctvAudioMuted ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
+                        <span className="text-[11px]">{!cctvAudioMuted ? 'Suara ON' : 'Suara OFF'}</span>
+                      </button>
+                    </div>
+
+                    {!cctvAudioMuted && (
+                      <div className="pt-2 flex items-center gap-3 px-3 py-1.5 bg-zinc-800/50 rounded-xl border border-zinc-700/50 text-xs">
+                        <Volume1 className="w-4 h-4 text-zinc-400 shrink-0" />
+                        <span className="text-[11px] text-zinc-300 shrink-0">Volume Suara Lab:</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={cctvVolume}
+                          onChange={(e) => setCctvVolume(Number(e.target.value))}
+                          className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                        />
+                        <span className="font-mono text-zinc-300 w-8 text-right text-[11px]">{cctvVolume}%</span>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+
+                {/* Right (1 Col): Minimalist PTZ D-Pad Controller & Real-Time Telemetry */}
+                <div className="space-y-6">
+                  
+                  {/* PTZ Rotasi Controller Card */}
+                  <div className="p-5 bg-zinc-900 text-white rounded-2xl border border-zinc-800 space-y-4 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                        <Compass className="w-4 h-4 text-sky-400" /> Kontrol Rotasi Kamera
+                      </h3>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">
+                        Connected
+                      </span>
+                    </div>
+
+                    {/* Minimalist Matte D-Pad */}
+                    <div className="flex flex-col items-center justify-center py-2">
+                      <div className="relative w-40 h-40 rounded-full bg-zinc-800/90 border border-zinc-700/80 shadow-lg flex items-center justify-center">
+                        
+                        {/* UP */}
+                        <button
+                          type="button"
+                          onClick={() => handlePtzAction('up')}
+                          className={`absolute top-2 left-1/2 -translate-x-1/2 w-10 h-8 rounded-t-xl bg-zinc-700/70 hover:bg-sky-600 text-zinc-200 hover:text-white flex items-center justify-center transition active:scale-95 ${ptzMoving === 'up' ? 'bg-sky-500 text-white scale-95' : ''}`}
+                          title="Putar Atas"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+
+                        {/* DOWN */}
+                        <button
+                          type="button"
+                          onClick={() => handlePtzAction('down')}
+                          className={`absolute bottom-2 left-1/2 -translate-x-1/2 w-10 h-8 rounded-b-xl bg-zinc-700/70 hover:bg-sky-600 text-zinc-200 hover:text-white flex items-center justify-center transition active:scale-95 ${ptzMoving === 'down' ? 'bg-sky-500 text-white scale-95' : ''}`}
+                          title="Putar Bawah"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+
+                        {/* LEFT */}
+                        <button
+                          type="button"
+                          onClick={() => handlePtzAction('left')}
+                          className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-10 rounded-l-xl bg-zinc-700/70 hover:bg-sky-600 text-zinc-200 hover:text-white flex items-center justify-center transition active:scale-95 ${ptzMoving === 'left' ? 'bg-sky-500 text-white scale-95' : ''}`}
+                          title="Putar Kiri"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        {/* RIGHT */}
+                        <button
+                          type="button"
+                          onClick={() => handlePtzAction('right')}
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-10 rounded-r-xl bg-zinc-700/70 hover:bg-sky-600 text-zinc-200 hover:text-white flex items-center justify-center transition active:scale-95 ${ptzMoving === 'right' ? 'bg-sky-500 text-white scale-95' : ''}`}
+                          title="Putar Kanan"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+
+                        {/* CENTER: Auto Reset */}
+                        <button
+                          type="button"
+                          onClick={() => handlePtzAction('center')}
+                          className="w-12 h-12 rounded-full bg-zinc-700 hover:bg-sky-600 text-white shadow-md flex items-center justify-center text-[10px] font-bold transition active:scale-90 border border-zinc-600"
+                          title="Reset Posisi"
+                        >
+                          <RotateCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Presets */}
+                    <div className="space-y-2 pt-2 border-t border-zinc-800">
+                      <span className="text-[11px] font-medium text-zinc-400">Sudut Sorot Cepat:</span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handlePtzPreset('Rig Shell & Tube', 'rig')}
+                          className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-lg text-[11px] font-medium text-zinc-200 text-left transition truncate border border-zinc-700/50"
+                        >
+                          • Rig Shell & Tube
                         </button>
                         <button
                           type="button"
-                          title="Layar Penuh"
-                          className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition"
+                          onClick={() => handlePtzPreset('Tangki Fluida', 'tank')}
+                          className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-lg text-[11px] font-medium text-zinc-200 text-left transition truncate border border-zinc-700/50"
                         >
-                          <Maximize2 className="w-3.5 h-3.5" />
+                          • Tangki & Pompa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePtzPreset('Panel Solenoid', 'valve')}
+                          className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-lg text-[11px] font-medium text-zinc-200 text-left transition truncate border border-zinc-700/50"
+                        >
+                          • Panel Solenoid
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePtzPreset('Reset Tengah', 'center')}
+                          className="px-2.5 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-lg text-[11px] font-medium text-zinc-200 text-left transition truncate border border-zinc-700/50"
+                        >
+                          • Reset Tengah
                         </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Telemetry Live Overlay Side Card */}
-                  <div className="asklepios-card p-5 bg-slate-900 text-white rounded-3xl space-y-4 border border-slate-800 shadow-xl">
-                    <h3 className="text-sm font-extrabold flex items-center gap-2 text-sky-400 border-b border-slate-800 pb-3">
-                      <Activity className="w-4 h-4" /> Telemetri Real-Time Kamera
+                  {/* Telemetry Live Data Card */}
+                  <div className="p-5 bg-zinc-900 text-white rounded-2xl border border-zinc-800 space-y-3 shadow-sm">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2 border-b border-zinc-800 pb-3">
+                      <Activity className="w-4 h-4 text-emerald-400" /> Sensor Terhubung
                     </h3>
 
-                    <div className="space-y-2.5 text-xs">
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">TI1 (Hot Inlet):</span>
-                        <strong className="text-orange-400 text-sm font-extrabold">{latestData.ti1}°C</strong>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
+                        <span className="text-zinc-400 text-[10.5px] block">TI1 (Hot In):</span>
+                        <strong className="text-amber-400 font-mono text-sm">{latestData.ti1}°C</strong>
                       </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">TI2 (Hot Outlet):</span>
-                        <strong className="text-red-400 text-sm font-extrabold">{latestData.ti2}°C</strong>
+                      <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
+                        <span className="text-zinc-400 text-[10.5px] block">TI2 (Hot Out):</span>
+                        <strong className="text-rose-400 font-mono text-sm">{latestData.ti2}°C</strong>
                       </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">TI3 (Cold Inlet):</span>
-                        <strong className="text-cyan-400 text-sm font-extrabold">{latestData.ti3}°C</strong>
+                      <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
+                        <span className="text-zinc-400 text-[10.5px] block">TI3 (Cold In):</span>
+                        <strong className="text-cyan-400 font-mono text-sm">{latestData.ti3}°C</strong>
                       </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">TI4 (Cold Outlet):</span>
-                        <strong className="text-cyan-400 text-sm font-extrabold">{latestData.ti4}°C</strong>
+                      <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
+                        <span className="text-zinc-400 text-[10.5px] block">TI4 (Cold Out):</span>
+                        <strong className="text-cyan-400 font-mono text-sm">{latestData.ti4}°C</strong>
                       </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">Tekanan PI1:</span>
-                        <strong className="text-sky-400 text-sm font-extrabold">{latestData.pi1} bar</strong>
-                      </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">Debit Aliran FC1:</span>
-                        <strong className="text-emerald-400 text-sm font-extrabold">{latestData.fc1} L/min</strong>
-                      </div>
-
-                      <div className="p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 flex justify-between items-center">
-                        <span className="text-slate-400 font-medium">Status Dual Heater:</span>
-                        <strong className={dualHeaterState.powerWatt > 0 ? "text-emerald-400 font-extrabold" : "text-slate-400"}>
-                          {dualHeaterState.powerWatt > 0 ? `ON (${dualHeaterState.powerWatt}W)` : 'OFF'}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 text-[11px] text-slate-400 leading-relaxed">
-                      Telemetri disinkronkan secara *live* saat mengawasi visual fisik alat HE via kamera CCTV lab.
                     </div>
                   </div>
+
                 </div>
 
               </div>
+
+              {/* Bottom Section: Media History Gallery */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Camera className="w-4 h-4 text-sky-600" /> Galeri Media & Rekaman CCTV Lab
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Foto snapshot dan rekaman video tersimpan beserta data telemetri sensor suhu
+                    </p>
+                  </div>
+
+                    {/* Filter Tabs */}
+                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaTab('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeMediaTab === 'all'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                      >
+                        Semua ({cctvMediaList.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaTab('snapshot')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'snapshot'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                      >
+                        <Camera className="w-3.5 h-3.5 text-sky-600" /> Foto ({cctvMediaList.filter(m => m.type === 'snapshot').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaTab('video')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'video'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                      >
+                        <Film className="w-3.5 h-3.5 text-red-600" /> Video ({cctvMediaList.filter(m => m.type === 'video').length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Media Grid Cards */}
+                  {cctvMediaList.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-slate-400 text-xs">
+                      Belum ada foto snapshot atau rekaman video yang diambil. Klik tombol <strong>Snapshot</strong> atau <strong>Rekam Video</strong> di atas.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pt-1">
+                      {cctvMediaList
+                        .filter(item => activeMediaTab === 'all' ? true : item.type === activeMediaTab)
+                        .map((media) => (
+                          <div
+                            key={media.id}
+                            className="p-4 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition space-y-3 group"
+                          >
+                            <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
+                              {media.type === 'snapshot' && media.url ? (
+                                <img src={media.url} alt={media.title} className="w-full h-full object-cover" />
+                              ) : media.type === 'video' && media.url ? (
+                                <video src={media.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                              ) : (
+                                <div className="text-center p-2 text-slate-400">
+                                  {media.type === 'snapshot' ? (
+                                    <Camera className="w-8 h-8 text-sky-400 mx-auto mb-1" />
+                                  ) : (
+                                    <Film className="w-8 h-8 text-red-400 mx-auto mb-1" />
+                                  )}
+                                  <span className="text-[10px] font-mono font-bold text-slate-300 block">
+                                    {media.type === 'snapshot' ? 'SNAPSHOT FOTO' : `VIDEO (${media.metadata?.duration || '15s'})`}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded-md text-[10px] font-bold text-white">
+                                {media.type === 'snapshot' ? '📸 FOTO' : '🎥 VIDEO'}
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{media.title}</h4>
+                              <p className="text-[11px] text-slate-500 font-mono mt-0.5">{media.timestamp}</p>
+                            </div>
+
+                            {/* Watermark Telemetry Badges */}
+                            {media.metadata && (
+                              <div className="p-2 bg-white rounded-xl border border-slate-200/80 text-[10px] grid grid-cols-2 gap-1 font-mono text-slate-600">
+                                <div>TI1: <strong className="text-orange-600">{media.metadata.ti1}°C</strong></div>
+                                <div>TI2: <strong className="text-red-600">{media.metadata.ti2}°C</strong></div>
+                                <div>TI3: <strong className="text-cyan-600">{media.metadata.ti3}°C</strong></div>
+                                <div>FC1: <strong className="text-emerald-600">{media.metadata.flow} L/m</strong></div>
+                              </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewMediaItem(media)}
+                                className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Lihat
+                              </button>
+                              <div className="flex items-center gap-1">
+                                {media.url && (
+                                  <a
+                                    href={media.url}
+                                    download={media.type === 'snapshot'
+                                      ? `FluidHE_Snapshot_${media.id}.png`
+                                      : `FluidHE_Rekaman_${media.id}.webm`}
+                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 p-1 hover:bg-emerald-50 rounded-lg transition"
+                                    title="Download"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMediaItem(media.id)}
+                                  className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 p-1 hover:bg-red-50 rounded-lg transition"
+                                  title="Hapus Media"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+              {/* Media Preview Modal */}
+              {previewMediaItem && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                      <div>
+                        <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                          {previewMediaItem.type === 'snapshot' ? <Camera className="w-5 h-5 text-sky-400" /> : <Film className="w-5 h-5 text-red-400" />}
+                          {previewMediaItem.title}
+                        </h3>
+                        <p className="text-xs text-slate-400 font-mono mt-0.5">{previewMediaItem.timestamp}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMediaItem(null)}
+                        className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="aspect-video bg-black rounded-2xl border border-slate-800 flex items-center justify-center relative overflow-hidden">
+                      {previewMediaItem.type === 'snapshot' && previewMediaItem.url ? (
+                        <img src={previewMediaItem.url} alt="Snapshot" className="w-full h-full object-cover" />
+                      ) : previewMediaItem.type === 'video' && previewMediaItem.url ? (
+                        <video
+                          src={previewMediaItem.url}
+                          controls
+                          autoPlay
+                          className="w-full h-full object-contain rounded-2xl"
+                        />
+                      ) : (
+                        <div className="text-center p-6 space-y-2">
+                          <Video className="w-16 h-16 text-sky-400 mx-auto animate-pulse" />
+                          <p className="text-sm font-bold text-slate-200">Pratinjau Hasil Tangkapan Kamera CCTV Lab</p>
+                          <p className="text-xs text-slate-400 font-mono">Resolusi: 1920x1080 FHD • Lab HE Kampus IV UAD</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sensor Metadata Stamp Card */}
+                    {previewMediaItem.metadata && (
+                      <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 space-y-2">
+                        <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                          <Activity className="w-4 h-4" /> Telemetri Suhu & Debit Saat Tangkapan Diambil:
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
+                            <span className="text-slate-400 block text-[10px]">TI1 (Hot In)</span>
+                            <strong className="text-orange-400 text-sm">{previewMediaItem.metadata.ti1}°C</strong>
+                          </div>
+                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
+                            <span className="text-slate-400 block text-[10px]">TI2 (Hot Out)</span>
+                            <strong className="text-red-400 text-sm">{previewMediaItem.metadata.ti2}°C</strong>
+                          </div>
+                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
+                            <span className="text-slate-400 block text-[10px]">TI3 (Cold In)</span>
+                            <strong className="text-cyan-400 text-sm">{previewMediaItem.metadata.ti3}°C</strong>
+                          </div>
+                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
+                            <span className="text-slate-400 block text-[10px]">TI4 (Cold Out)</span>
+                            <strong className="text-cyan-400 text-sm">{previewMediaItem.metadata.ti4}°C</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      {previewMediaItem.url && (
+                        <a
+                          href={previewMediaItem.url}
+                          download={previewMediaItem.type === 'snapshot'
+                            ? `FluidHE_Snapshot_${previewMediaItem.id}.png`
+                            : `FluidHE_Rekaman_${previewMediaItem.id}.webm`}
+                          className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                        >
+                          <Download className="w-4 h-4" /> Download {previewMediaItem.type === 'snapshot' ? 'PNG' : 'WebM'}
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerCctvToast('File CCTV tersimpan otomatis di Cloud Drive UAD.', 'info');
+                          setIsCloudDriveModalOpen(true);
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                      >
+                        <CloudCheck className="w-4 h-4 text-emerald-200" /> Cloud Drive
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMediaItem(null)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -3596,15 +4533,15 @@ export default function FluidHEDashboard() {
                     <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
                       <FileText className="w-6 h-6 text-sky-600" /> Laporan Monitoring Heat Exchanger
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Ekspor data telemetri historis sesuai interval pencatatan (1s, 5s, 30s, 1m)</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive (Fasilitas unduh Flashdisk dinonaktifkan)</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5 no-print">
                     <button
-                      onClick={exportStyledExcelHTML}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-2 transition active:scale-95"
+                      onClick={handleCloudDriveAccess}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition active:scale-95"
                     >
-                      <Download className="w-4 h-4" /> Export Data Excel (.xlsx)
+                      <CloudCheck className="w-4 h-4 text-emerald-200 animate-pulse" /> Otomatis Tersimpan di Cloud Drive
                     </button>
                     <button
                       onClick={exportPDFReport}
@@ -3613,6 +4550,30 @@ export default function FluidHEDashboard() {
                       <FileText className="w-4 h-4" /> Cetak / PDF Laporan
                     </button>
                   </div>
+                </div>
+
+                {/* Banner Informasi Keamanan & Proteksi Data Flashdisk */}
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200/90 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-emerald-500/20 text-emerald-700 rounded-xl shrink-0">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
+                        Proteksi Data HE: Ambil Data via Flashdisk Dinonaktifkan
+                        <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 font-extrabold rounded-full text-[10px]">Auto Cloud Storage</span>
+                      </h4>
+                      <p className="text-slate-600 mt-0.5 leading-relaxed">
+                        Pengambilan data manual menggunakan USB Flashdisk telah dinonaktifkan demi integritas & keamanan laboratorium. Seluruh log telemetri sensor Heat Exchanger otomatis terunggah dan tersimpan aman di Google Drive / Supabase Cloud DB.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCloudDriveAccess}
+                    className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-1.5 transition text-xs shrink-0 active:scale-95"
+                  >
+                    <Cloud className="w-4 h-4 text-emerald-200" /> Buka Cloud Drive
+                  </button>
                 </div>
 
                 <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/90 mb-6 space-y-1.5 text-xs">
@@ -3773,13 +4734,16 @@ export default function FluidHEDashboard() {
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        step="0.05"
+                        step="0.1"
+                        min="0"
+                        max="2.0"
                         value={deltaPMaxThreshold}
                         onChange={(e) => setDeltaPMaxThreshold(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800"
                       />
-                      <span className="text-xs text-slate-500 font-semibold">bar</span>
+                      <span className="text-xs text-slate-500 font-semibold">barg</span>
                     </div>
+                    <p className="text-[11px] text-slate-500 mt-1 font-medium">Maksimal operasi 2,0 barg (ambang aman pompa: 1,5–2,0 barg)</p>
                   </div>
 
                   <div>
@@ -3856,17 +4820,17 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* TAB 6: USER MANAGEMENT & SESSION LIMITS (3-TIER ROLE ACCESS) */}
+          {/* TAB 6: USER MANAGEMENT & SESSION LIMITS (2-TIER ROLE ACCESS) */}
           {activeTab === 'users' && (
             <div className="space-y-6">
-              {currentUser.role !== 'admin' && currentUser.role !== 'developer' ? (
+              {currentUser.role !== 'admin' ? (
                 <div className="asklepios-card p-8 bg-white text-center space-y-3">
                   <div className="inline-flex p-4 bg-red-50 text-red-600 rounded-full mb-2">
                     <Lock className="w-8 h-8" />
                   </div>
-                  <h2 className="text-xl font-bold text-slate-900">Akses Dibatasi (Admin & Developer Only)</h2>
+                  <h2 className="text-xl font-bold text-slate-900">Akses Dibatasi (Admin Only)</h2>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Halaman Manajemen User hanya dapat diakses oleh akun dengan Role <strong>ADMIN</strong> atau <strong>DEVELOPER</strong>.
+                    Halaman Manajemen User hanya dapat diakses oleh akun dengan Role <strong>ADMIN</strong>.
                   </p>
                 </div>
               ) : (
@@ -3874,9 +4838,9 @@ export default function FluidHEDashboard() {
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
                     <div>
                       <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                        <Users className="w-5 h-5 text-sky-600" /> User Management & Hak Akses (3-Tier RBAC)
+                        <Users className="w-5 h-5 text-sky-600" /> User Management & Hak Akses (Admin & Operator)
                       </h2>
-                      <p className="text-xs text-slate-500">Kelola akun Developer, Admin (Dosen/KaLab), dan Operator (Mahasiswa)</p>
+                      <p className="text-xs text-slate-500">Kelola akun Admin (Dosen/KaLab) dan Operator (Mahasiswa)</p>
                     </div>
 
                     <button
@@ -3885,6 +4849,45 @@ export default function FluidHEDashboard() {
                     >
                       <UserPlus className="w-4 h-4" /> Tambah User Baru
                     </button>
+                  </div>
+
+                  {/* Single Active Session Lock Panel */}
+                  <div className="p-4 bg-sky-50/90 rounded-2xl border border-sky-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-sky-600" />
+                        <h4 className="text-xs font-bold text-sky-900">
+                          Status Kunci Sesi Tunggal (Single Active Session Lock)
+                        </h4>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${activeSession ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : 'bg-slate-100 text-slate-500'}`}>
+                          {activeSession ? '🟢 1 SESI AKTIF' : '⚪ BEBAS / SIAP'}
+                        </span>
+                      </div>
+                      <p className="text-[11.5px] text-sky-800 leading-relaxed">
+                        {activeSession ? (
+                          <>
+                            Sesi aktif oleh: <strong>{activeSession.name}</strong> (<code>{activeSession.email}</code>) — Terhubung sejak {activeSession.loginTime}. Pengguna lain diblokir dari login untuk mencegah konflik data kendali hardware.
+                          </>
+                        ) : (
+                          'Sistem dalam keadaan bebas. Belum ada pengguna lain yang mengunci sesi.'
+                        )}
+                      </p>
+                    </div>
+
+                    {activeSession && (
+                      <button
+                        onClick={() => {
+                          try {
+                            localStorage.removeItem('fluidhe_active_session');
+                          } catch (e) {}
+                          setActiveSession(null);
+                          alert('✅ Kunci sesi berhasil diakhiri! Pengguna lain sekarang dapat melakukan login.');
+                        }}
+                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition whitespace-nowrap cursor-pointer"
+                      >
+                        ⚠️ Akhiri / Reset Sesi Aktif
+                      </button>
+                    )}
                   </div>
 
                   {/* Admin Setting: Session Limit for Operators */}
@@ -3925,9 +4928,10 @@ export default function FluidHEDashboard() {
                           <th className="p-3">Nama Pengguna</th>
                           <th className="p-3">Email UAD</th>
                           <th className="p-3">Role / Hak Akses</th>
+                          <th className="p-3">Jadwal & Tanggal Akses Login</th>
                           <th className="p-3">Status</th>
                           <th className="p-3">Login Terakhir</th>
-                          <th className="p-3">Aksi</th>
+                          <th className="p-3">Aksi (Kontrol Admin)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -3937,14 +4941,30 @@ export default function FluidHEDashboard() {
                             <td className="p-3 font-bold text-slate-900">{u.name}</td>
                             <td className="p-3 text-slate-600">{u.email}</td>
                             <td className="p-3">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'developer'
-                                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                  : u.role === 'admin'
-                                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                }`}>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin'
+                                     ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                                     : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                 }`}>
                                 {u.role}
                               </span>
+                            </td>
+                            <td className="p-3">
+                              {u.isScheduleRestricted ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="px-2.5 py-0.5 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 w-fit">
+                                    <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
+                                    {u.allowedStartDate} s.d. {u.allowedEndDate}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1 pl-0.5">
+                                    <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" /> Jam {u.allowedStartTime || '07:00'} - {u.allowedEndTime || '18:00'} WIB
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 text-slate-500" />
+                                  24/7 Akses Bebas
+                                </span>
+                              )}
                             </td>
                             <td className="p-3">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
@@ -3954,7 +4974,7 @@ export default function FluidHEDashboard() {
                             </td>
                             <td className="p-3 text-slate-500">{u.lastLogin}</td>
                             <td className="p-3">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <button
                                   disabled={resendingEmailFor === u.id}
                                   onClick={() => handleResendUserCredentials(u)}
@@ -3981,7 +5001,7 @@ export default function FluidHEDashboard() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    const nextRole: UserRole = u.role === 'operator' ? 'admin' : u.role === 'admin' ? 'developer' : 'operator';
+                                    const nextRole: UserRole = u.role === 'operator' ? 'admin' : 'operator';
                                     setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
                                   }}
                                   className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition"
@@ -4167,7 +5187,6 @@ export default function FluidHEDashboard() {
                       >
                         <option value="operator">Operator (Mahasiswa Praktikum)</option>
                         <option value="admin">Admin (Dosen / KaLab)</option>
-                        <option value="developer">Developer (Hardware / Software Engineer)</option>
                       </select>
                     </div>
 
@@ -4209,130 +5228,7 @@ export default function FluidHEDashboard() {
             </div>
           )}
 
-          {/* TAB 7: DEVELOPER CONTROL & HARDWARE INTEGRATION */}
-          {activeTab === 'developer' && (
-            <div className="space-y-6">
-              <div className="asklepios-card p-6 bg-white space-y-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-purple-900 flex items-center gap-2">
-                      <Code className="w-5 h-5 text-purple-600" /> Developer Mode & Hardware Protocol Inspector
-                    </h2>
-                    <p className="text-xs text-slate-500">Konfigurasi integrasi Modbus RTU / RS485, MQTT topic stream, dan kalibrasi sensor</p>
-                  </div>
-                  <span className="px-3 py-1 bg-purple-100 text-purple-800 font-extrabold text-xs rounded-full border border-purple-200">
-                    Developer Privilege Active
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Modbus & MQTT Config Box */}
-                  <div className="p-5 bg-purple-50/50 rounded-2xl border border-purple-200 space-y-4">
-                    <h3 className="text-xs font-bold text-purple-900 flex items-center gap-2">
-                      <Terminal className="w-4 h-4 text-purple-600" /> Protocol Hardware Settings
-                    </h3>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Port Serial Modbus RTU (RS485):</label>
-                      <input
-                        type="text"
-                        value={modbusPort}
-                        onChange={(e) => setModbusPort(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-purple-200 rounded-xl text-xs font-mono text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">MQTT Broker Endpoint & Topic:</label>
-                      <input
-                        type="text"
-                        value={mqttBroker}
-                        onChange={(e) => setMqttBroker(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-purple-200 rounded-xl text-xs font-mono text-slate-800"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Calibration Offset Sliders */}
-                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                    <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <Sliders className="w-4 h-4 text-sky-600" /> Sensor Calibration Offsets
-                    </h3>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                        <span>Temperature Sensor Offset (TI1-TI6)</span>
-                        <strong>{tempOffset > 0 ? `+${tempOffset}` : tempOffset}°C</strong>
-                      </div>
-                      <input
-                        type="range"
-                        min="-5"
-                        max="5"
-                        step="0.1"
-                        value={tempOffset}
-                        onChange={(e) => setTempOffset(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                        <span>Pressure Transducer Offset (PI1-PI4)</span>
-                        <strong>{pressOffset > 0 ? `+${pressOffset}` : pressOffset} bar</strong>
-                      </div>
-                      <input
-                        type="range"
-                        min="-0.5"
-                        max="0.5"
-                        step="0.01"
-                        value={pressOffset}
-                        onChange={(e) => setPressOffset(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Raw Telemetry JSON Payload Stream */}
-                <div className="space-y-2">
-                  <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-slate-600" /> Live Modbus/MQTT Raw Payload Stream (JSON Inspector)
-                  </h3>
-                  <pre className="p-4 bg-slate-950 text-emerald-400 font-mono text-xs rounded-2xl overflow-x-auto max-h-64 shadow-inner border border-slate-800">
-                    {JSON.stringify(
-                      {
-                        device_id: 'HE-RIG-UAD-01',
-                        firmware_version: 'v2.5-DualHeater-SV4',
-                        protocol: 'Modbus-RTU over RS485',
-                        timestamp: latestData.timestamp,
-                        relays: {
-                          relay_1_heater1: dualHeaterState.h1,
-                          relay_2_heater2: dualHeaterState.h2,
-                          relay_3_sv1_nc: solenoidValves.sv1.active,
-                          relay_4_sv2_no: solenoidValves.sv2.active,
-                          relay_5_sv3_nc: solenoidValves.sv3.active,
-                          relay_6_sv4_no: solenoidValves.sv4.active
-                        },
-                        telemetry: {
-                          ti1_hot_in: latestData.ti1,
-                          ti2_hot_out: latestData.ti2,
-                          ti3_cold_in: latestData.ti3,
-                          ti4_cold_out: latestData.ti4,
-                          pi1_hot_in: latestData.pi1,
-                          pi2_hot_out: latestData.pi2,
-                          delta_p_hot: deltaPHot,
-                          fc1_flow_hot: latestData.fc1,
-                          fc2_flow_cold: latestData.fc2
-                        }
-                      },
-                      null,
-                      2
-                    )}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          )}
 
         </main>
       </div>
@@ -4695,7 +5591,7 @@ export default function FluidHEDashboard() {
           <span className="text-[10px]">Data Log</span>
         </button>
 
-        {currentUser.role === 'admin' || currentUser.role === 'developer' ? (
+        {currentUser.role === 'admin' ? (
           <button
             type="button"
             onClick={() => {
@@ -4729,6 +5625,153 @@ export default function FluidHEDashboard() {
           </button>
         )}
       </nav>
+
+      {/* ─── MODAL CLOUD DRIVE EXPLORER & FLASHDISK PROTECTION NOTICE ─── */}
+      {isCloudDriveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden space-y-0">
+            {/* Modal Header */}
+            <div className="p-6 bg-gradient-to-r from-emerald-800 to-teal-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-500/30 rounded-2xl border border-emerald-400/30">
+                  <Cloud className="w-6 h-6 text-emerald-300 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold flex items-center gap-2">
+                    Google Drive Cloud Storage
+                    <span className="px-2 py-0.5 bg-emerald-400/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold rounded-full">
+                      Auto-Sync Active
+                    </span>
+                  </h3>
+                  <p className="text-xs text-emerald-200/90 mt-0.5">Repositori Penyimpanan Otomatis Data Heat Exchanger UAD</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCloudDriveModalOpen(false)}
+                className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 text-xs text-slate-700">
+              {/* Alert Banner Flashdisk Disabled */}
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-3">
+                <div className="p-2 bg-amber-500/20 text-amber-800 rounded-xl shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-amber-900 text-sm">Ambil Data via Flashdisk Dinonaktifkan</h4>
+                  <p className="text-amber-800/90 mt-0.5 leading-relaxed">
+                    Sesuai standar operasional keamanan laboratorium, ekstraksi data manual menggunakan USB Flashdisk telah dinonaktifkan secara otomatis. Seluruh berkas telemetri HE diproteksi dan tersinkron langsung ke Cloud Drive institusi.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Sync Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Status Koneksi</span>
+                  <div className="flex items-center gap-1.5 mt-1 font-extrabold text-emerald-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" /> Terhubung
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Sinkron Terakhir</span>
+                  <div className="font-extrabold text-slate-800 mt-1">{cloudLastSyncTime} WIB</div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Total Log Terunggah</span>
+                  <div className="font-extrabold text-sky-600 mt-1">{telemetryHistory.length} Baris Data</div>
+                </div>
+              </div>
+
+              {/* Folder Location Info */}
+              <div className="p-3 bg-slate-900 text-slate-200 rounded-2xl font-mono text-[11px] flex items-center justify-between gap-2 overflow-x-auto">
+                <div className="flex items-center gap-2 truncate">
+                  <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="truncate">GoogleDrive://Lab_UAD/Heat_Exchanger_Data/2026/</span>
+                </div>
+                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 font-bold rounded text-[10px] whitespace-nowrap">
+                  Protected
+                </span>
+              </div>
+
+              {/* Auto Saved Files List */}
+              <div>
+                <h4 className="font-bold text-slate-900 mb-2 flex items-center justify-between">
+                  <span>Berkas Otomatis Tersimpan di Cloud</span>
+                  <span className="text-[10px] font-normal text-slate-400">Penyimpanan Terenkripsi</span>
+                </h4>
+                <div className="space-y-2">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between hover:bg-slate-100/80 transition">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-slate-800">HE_Telemetry_Logs_Realtime_AutoSave.xlsx</div>
+                        <div className="text-[10px] text-slate-400">Spreadsheet • Auto-Updated tiap interval</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-lg flex items-center gap-1">
+                      <CloudCheck className="w-3 h-3" /> Auto-Saved
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between hover:bg-slate-100/80 transition">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5 text-sky-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-slate-800">HE_Daily_Thermal_Analytics_Report.pdf</div>
+                        <div className="text-[10px] text-slate-400">Ringkasan Grafik & Status Aktuator</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-lg flex items-center gap-1">
+                      <CloudCheck className="w-3 h-3" /> Auto-Saved
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between hover:bg-slate-100/80 transition">
+                    <div className="flex items-center gap-3">
+                      <Database className="w-5 h-5 text-purple-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-slate-800">Supabase_Telemetry_Backup_Store</div>
+                        <div className="text-[10px] text-slate-400">Tabel PostgreSQL Telemetri Realtime</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 bg-purple-100 text-purple-800 font-bold text-[10px] rounded-lg flex items-center gap-1">
+                      <CloudCheck className="w-3 h-3" /> Database Live
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText('https://drive.google.com/drive/folders/uad-heat-exchanger-lab');
+                  alert('Link repositori Google Drive berhasil disalin ke clipboard!');
+                }}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Salin Link Drive
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCloudDriveModalOpen(false)}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition shadow-md shadow-emerald-700/20 active:scale-95"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
 
       {/* ─── INTERACTIVE BEGINNER GUIDED TOUR OVERLAY ─── */}
       <GuidedTour

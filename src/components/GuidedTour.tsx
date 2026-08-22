@@ -11,6 +11,7 @@ import {
   Activity,
   ArrowRightLeft,
   Download,
+  CloudCheck,
   AlertTriangle,
   Server,
   Layers,
@@ -105,11 +106,11 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'logs-export',
     targetId: 'tour-logs-tab',
     tab: 'logs',
-    badge: 'Data & Laporan',
-    icon: <Download className="w-5 h-5 text-emerald-500" />,
-    title: 'Riwayat Sensor & Ekspor Excel',
-    description: 'Seluruh riwayat telemetri sensor tersimpan per detik. Klik tombol "Export Data Excel (.xlsx)" untuk mengunduh berkas spreadsheet lengkap untuk keperluan analisis data dan laporan praktikum.',
-    tips: 'Berkas Excel sudah terformat rapi dengan stempel waktu, nilai seluruh sensor, serta status aktuator.'
+    badge: 'Data & Cloud Storage',
+    icon: <CloudCheck className="w-5 h-5 text-emerald-500" />,
+    title: 'Otomatisasi Cloud Drive & Proteksi Data',
+    description: 'Seluruh riwayat telemetri sensor tersimpan per detik secara otomatis ke Google Drive / Cloud Storage UAD. Fasilitas ekstraksi data via Flashdisk dinonaktifkan demi keamanan data.',
+    tips: 'Anda dapat meninjau repositori berkas laporan Excel dan log real-time melalui tombol "Akses Cloud Drive".'
   },
   {
     id: 'emergency-stop',
