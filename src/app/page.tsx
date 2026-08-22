@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { uploadToCloud } from '@/lib/supabase-upload';
+import { uploadToDrive } from '@/lib/drive-upload';
 import { useSupabaseIntegration } from '@/lib/supabaseService';
 import GuidedTour from '@/components/GuidedTour';
 import {
@@ -409,7 +410,7 @@ export default function FluidHEDashboard() {
 
     // 2. Validasi Jam Operasional Check
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    
+
     const [startH, startM] = (user.allowedStartTime || '07:00').split(':').map(Number);
     const startMinutes = startH * 60 + (startM || 0);
 
@@ -553,7 +554,7 @@ export default function FluidHEDashboard() {
   const [cctvStreamSource, setCctvStreamSource] = useState<'local' | 'custom' | 'demo'>('local');
   const [isEditingCctvUrl, setIsEditingCctvUrl] = useState<boolean>(false);
   const [tempCctvUrl, setTempCctvUrl] = useState<string>('http://localhost:8889/stream.html?src=he_cctv');
-  
+
   // EZVIZ Mobile App Style Controls
   const [cctvAudioMuted, setCctvAudioMuted] = useState<boolean>(false);
   const [audioUserActivated, setAudioUserActivated] = useState<boolean>(false);
@@ -564,7 +565,7 @@ export default function FluidHEDashboard() {
   const [isPtzDrawerOpen, setIsPtzDrawerOpen] = useState<boolean>(false);
   const [ptzSpeed, setPtzSpeed] = useState<number>(60);
   const [ptzMoving, setPtzMoving] = useState<string | null>(null);
-  
+
   // Digital Interactive PTZ States (Scale & Viewport Pan)
   const [digitalZoom, setDigitalZoom] = useState<number>(1.0);
   const [digitalPanX, setDigitalPanX] = useState<number>(0);
@@ -1044,7 +1045,7 @@ export default function FluidHEDashboard() {
         pcRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cctvStreamSource]);
 
   // Sync audio mute with video element — uses ref to bypass browser autoplay restrictions
@@ -1054,7 +1055,7 @@ export default function FluidHEDashboard() {
       if (!cctvAudioMuted) {
         videoRef.current.volume = cctvVolume / 100;
         // Force play to resume audio after unmuting
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       }
     }
   }, [cctvAudioMuted, cctvVolume]);
@@ -1219,8 +1220,8 @@ export default function FluidHEDashboard() {
         const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
           ? 'video/webm;codecs=vp9'
           : MediaRecorder.isTypeSupported('video/webm')
-          ? 'video/webm'
-          : '';
+            ? 'video/webm'
+            : '';
 
         if (!mimeType) {
           triggerCctvToast('⚠️ Browser tidak mendukung perekaman video', 'warning');
@@ -1337,7 +1338,7 @@ export default function FluidHEDashboard() {
       }
     } else {
       if (audioTransceiverRef.current) {
-        try { await audioTransceiverRef.current.sender.replaceTrack(null); } catch {}
+        try { await audioTransceiverRef.current.sender.replaceTrack(null); } catch { }
       }
       if (micStreamRef.current) {
         micStreamRef.current.getTracks().forEach(t => t.stop());
@@ -1476,8 +1477,8 @@ export default function FluidHEDashboard() {
     const defaultFallback = (email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id' || (found && found.role === 'admin'))
       ? 'admin123'
       : (email === 'dwi.melianti@mhs.itenas.ac.id' || email === 'operator@uad.ac.id' || (found && found.role === 'operator'))
-      ? 'operator123'
-      : 'dev123';
+        ? 'operator123'
+        : 'dev123';
 
     const expectedPassword = (activePasswords[email] || userPasswords[email] || defaultFallback).trim();
     const enteredPassword = loginPassword.trim();
@@ -1633,8 +1634,9 @@ export default function FluidHEDashboard() {
   const handleExportAndUpload = async () => {
     try {
       setIsUploading(true);
-      triggerCctvToast('⏳ Mengolah data & mengunggah file ke Supabase Cloud...', 'info');
+      triggerCctvToast('⏳ Mengolah data & mengunggah file ke Google Drive...', 'info');
 
+      // 1. Generate Excel (kode yang sudah ada)
       const wb = XLSX.utils.book_new();
       const wsData = [
         ['Waktu Timestamp', 'TI1 Hot In (°C)', 'TI2 Hot Out (°C)', 'TI3 Cold In (°C)', 'TI4 Cold Out (°C)', 'FC1 Laju Alir (L/m)', 'Mode Aliran', 'Status Heater'],
@@ -1652,20 +1654,25 @@ export default function FluidHEDashboard() {
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       XLSX.utils.book_append_sheet(wb, ws, 'Telemetry');
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([excelBuffer], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-      
-      const fileName = `HE_Telemetry_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      
-      const result = await uploadToCloud(blob, fileName, 'telemetry-logs');
-      XLSX.writeFile(wb, fileName);
 
-      triggerCctvToast('✅ File Excel tersimpan di Cloud Storage!', 'success');
-      alert(`✅ File tersimpan di Supabase Cloud Storage!\n\n🔗 URL: ${result.url}`);
+      // 2. Upload ke Google Drive
+      const fileName = `HE_Telemetry_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const result = await uploadToDrive(blob, fileName, 'Telemetry_Logs');
+
+      triggerCctvToast('✅ File Excel tersimpan di Google Drive!', 'success');
+
+      // 3. Berhasil!
+      alert(`✅ File tersimpan di Google Drive!\n\n🔗 Buka: ${result.viewUrl}`);
+      if (result.viewUrl) {
+        window.open(result.viewUrl, '_blank');
+      }
+
     } catch (err: any) {
       console.error('Excel upload error:', err);
-      triggerCctvToast('❌ Gagal upload Excel ke Cloud: ' + (err?.message || 'Error'), 'warning');
+      triggerCctvToast('❌ Gagal upload Excel ke Drive: ' + (err?.message || 'Error'), 'warning');
       alert(`❌ Gagal upload: ${err?.message || 'Error'}`);
     } finally {
       setIsUploading(false);
@@ -2056,8 +2063,8 @@ export default function FluidHEDashboard() {
                   setLoginError(null);
                 }}
                 className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'admin'
-                    ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                   }`}
               >
                 <Shield className="w-3.5 h-3.5 shrink-0" />
@@ -2072,8 +2079,8 @@ export default function FluidHEDashboard() {
                   setLoginError(null);
                 }}
                 className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'operator'
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                   }`}
               >
                 <Users className="w-3.5 h-3.5 shrink-0" />
@@ -2374,31 +2381,26 @@ export default function FluidHEDashboard() {
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="font-bold text-slate-600">Kekuatan Keamanan Sandi:</span>
-                        <span className={`font-black ${
-                          strength.score <= 1
+                        <span className={`font-black ${strength.score <= 1
                             ? 'text-rose-600'
                             : strength.score <= 3
-                            ? 'text-amber-600'
-                            : 'text-emerald-600'
-                        }`}>
+                              ? 'text-amber-600'
+                              : 'text-emerald-600'
+                          }`}>
                           {strength.score <= 1 ? 'Sangat Lemah' : strength.score <= 3 ? 'Sedang' : 'Kuat & Aman ✓'}
                         </span>
                       </div>
 
                       {/* Strength Progress Bar */}
                       <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex gap-1">
-                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                          strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                        }`} />
-                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                          strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                        }`} />
-                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                          strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                        }`} />
-                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                          strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
-                        }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                          }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                          }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                          }`} />
+                        <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
+                          }`} />
                       </div>
 
                       {/* Security Requirements Checklist */}
@@ -2788,8 +2790,8 @@ export default function FluidHEDashboard() {
             <div className="text-right hidden lg:block">
               <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
               <span className={`inline-block text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${currentUser.role === 'admin'
-                  ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                 }`}>
                 {currentUser.role}
               </span>
@@ -3478,17 +3480,17 @@ export default function FluidHEDashboard() {
 
                 {/* ─── LIVE VISUAL IOT TRANSMISSION ACTIVITY BAR ─── */}
                 <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${syncFeedback.active
-                    ? syncFeedback.type === 'syncing'
-                      ? 'bg-sky-500/10 border-sky-400/50 shadow-md shadow-sky-500/10'
-                      : 'bg-emerald-500/10 border-emerald-400/50 shadow-md shadow-emerald-500/10'
-                    : 'bg-slate-50 border-slate-200'
+                  ? syncFeedback.type === 'syncing'
+                    ? 'bg-sky-500/10 border-sky-400/50 shadow-md shadow-sky-500/10'
+                    : 'bg-emerald-500/10 border-emerald-400/50 shadow-md shadow-emerald-500/10'
+                  : 'bg-slate-50 border-slate-200'
                   }`}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-xl border shrink-0 transition-all ${syncFeedback.active
-                        ? syncFeedback.type === 'syncing'
-                          ? 'bg-sky-600 text-white border-sky-500 animate-spin'
-                          : 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
-                        : 'bg-white text-slate-400 border-slate-200'
+                      ? syncFeedback.type === 'syncing'
+                        ? 'bg-sky-600 text-white border-sky-500 animate-spin'
+                        : 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                      : 'bg-white text-slate-400 border-slate-200'
                       }`}>
                       {syncFeedback.active ? (
                         syncFeedback.type === 'syncing' ? <RefreshCw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />
@@ -3498,33 +3500,33 @@ export default function FluidHEDashboard() {
                     </div>
 
                     <div>
-                      {syncFeedback.active && (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <strong className="text-xs font-bold text-slate-900">
-                              {syncFeedback.message}
-                            </strong>
-                            <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${syncFeedback.type === 'syncing'
-                                ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
-                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              }`}>
-                              {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                            {syncFeedback.detail}
-                          </p>
-                        </>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <strong className="text-xs font-bold text-slate-900">
+                          {syncFeedback.active ? syncFeedback.message : 'Jalur Sinkronisasi IoT Cloud (ESP32)'}
+                        </strong>
+                        {syncFeedback.active && (
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider ${syncFeedback.type === 'syncing'
+                            ? 'bg-sky-100 text-sky-800 border border-sky-200 animate-pulse'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}>
+                            {syncFeedback.type === 'syncing' ? 'Mengirim ke Alat...' : 'Perintah Diterima'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        {syncFeedback.active
+                          ? syncFeedback.detail
+                          : 'Setiap perubahan tombol & slider disinkronkan secara real-time ke mikrokontroler via tabel device_controls.'}
+                      </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 shrink-0 bg-white/80 px-3 py-1.5 rounded-xl border border-slate-200">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${syncFeedback.active && syncFeedback.type === 'syncing'
-                        ? 'bg-sky-500 animate-ping'
-                        : supabaseStatus === 'ONLINE'
-                          ? 'bg-emerald-500 animate-pulse'
-                          : 'bg-red-500'
+                      ? 'bg-sky-500 animate-ping'
+                      : supabaseStatus === 'ONLINE'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-red-500'
                       }`} />
                     <span>Sinkronisasi: <strong>{supabaseStatus === 'ONLINE' ? 'AKTIF (~40ms)' : supabaseStatus}</strong></span>
                   </div>
@@ -3609,8 +3611,8 @@ export default function FluidHEDashboard() {
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Status Heater</span>
                       <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${(supabaseTelemetry?.heater_status === 'ON' || dualHeaterState.powerWatt > 0)
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-slate-200 text-slate-700'
+                        ? 'bg-orange-100 text-orange-800'
+                        : 'bg-slate-200 text-slate-700'
                         }`}>
                         {dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'}
                       </span>
@@ -3619,8 +3621,8 @@ export default function FluidHEDashboard() {
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <span className="text-[10px] text-slate-500 font-semibold block">Status Alarm</span>
                       <span className={`inline-block px-2 py-0.5 mt-0.5 rounded text-[10px] font-extrabold ${(supabaseTelemetry?.warning_status === 'NORMAL')
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-red-100 text-red-800'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-red-100 text-red-800'
                         }`}>
                         {supabaseTelemetry ? supabaseTelemetry.warning_status : 'NORMAL'}
                       </span>
@@ -3649,8 +3651,8 @@ export default function FluidHEDashboard() {
                           }}
                           disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.control_mode === 'AUTO'
-                              ? 'bg-purple-600 text-white shadow'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                            ? 'bg-purple-600 text-white shadow'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                             }`}
                         >
                           AUTO
@@ -3663,8 +3665,8 @@ export default function FluidHEDashboard() {
                           }}
                           disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.control_mode === 'MANUAL'
-                              ? 'bg-purple-600 text-white shadow'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                            ? 'bg-purple-600 text-white shadow'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                             }`}
                         >
                           MANUAL
@@ -3690,8 +3692,8 @@ export default function FluidHEDashboard() {
                           }}
                           disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.flow_mode === 'COUNTER'
-                              ? 'bg-sky-600 text-white shadow'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                            ? 'bg-sky-600 text-white shadow'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                             }`}
                         >
                           COUNTER
@@ -3705,8 +3707,8 @@ export default function FluidHEDashboard() {
                           }}
                           disabled={emergencyStopped}
                           className={`py-2 rounded-xl text-xs font-extrabold transition ${supabaseControls.flow_mode === 'CO-CURRENT'
-                              ? 'bg-sky-600 text-white shadow'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                            ? 'bg-sky-600 text-white shadow'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                             }`}
                         >
                           CO-CURRENT
@@ -3741,10 +3743,10 @@ export default function FluidHEDashboard() {
                         }}
                         disabled={emergencyStopped || supabaseControls.control_mode === 'AUTO'}
                         className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${supabaseControls.control_mode === 'AUTO'
-                            ? 'bg-purple-600 text-white opacity-90 cursor-not-allowed shadow-sm'
-                            : supabaseControls.heater_status
-                              ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md'
-                              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                          ? 'bg-purple-600 text-white opacity-90 cursor-not-allowed shadow-sm'
+                          : supabaseControls.heater_status
+                            ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                           }`}
                       >
                         <Power className="w-4 h-4" />
@@ -3769,8 +3771,8 @@ export default function FluidHEDashboard() {
 
                     {/* Slider Target Suhu (TC1 Setpoint) */}
                     <div className={`p-4 rounded-2xl border transition-all space-y-2 ${supabaseControls.control_mode === 'AUTO'
-                        ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-400/20'
-                        : 'bg-slate-50 border-slate-200'
+                      ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-400/20'
+                      : 'bg-slate-50 border-slate-200'
                       }`}>
                       <div className="flex justify-between items-center text-xs font-bold text-slate-800">
                         <span className="flex items-center gap-1.5">
@@ -3937,7 +3939,7 @@ export default function FluidHEDashboard() {
           {/* TAB 3: CCTV LIVE MONITORING (MODERN MINIMALIST INDUSTRIAL DESIGN) */}
           {activeTab === 'cctv' && (
             <div className="space-y-6">
-              
+
               {/* Header Bar: Clean & Minimalist */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
@@ -3947,6 +3949,9 @@ export default function FluidHEDashboard() {
                       CCTV Live Monitoring — Heat Exchanger Lab
                     </h2>
                   </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    FluidHE IP Cam (1080p Full HD) • Transmisi RTSP Real-Time
+                  </p>
 
                 </div>
 
@@ -3961,7 +3966,7 @@ export default function FluidHEDashboard() {
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam1'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     Rig Shell & Tube
                   </button>
@@ -3974,7 +3979,7 @@ export default function FluidHEDashboard() {
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam2'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     Tangki Fluida
                   </button>
@@ -3987,7 +3992,7 @@ export default function FluidHEDashboard() {
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${selectedCamera === 'cam3'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     Panel Valve
                   </button>
@@ -3996,16 +4001,16 @@ export default function FluidHEDashboard() {
 
               {/* Main Monitoring Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
+
                 {/* Left (2 Cols): Live Video Canvas & Floating Quick Actions */}
                 <div className="lg:col-span-2 space-y-4">
-                  
+
                   {/* Video Player Container */}
                   <div
                     id="cctv-player-container"
                     className="relative bg-zinc-950 rounded-2xl overflow-hidden shadow-xl aspect-video flex flex-col justify-between p-4 border border-zinc-800 group"
                   >
-                    
+
                     {/* Top Floating Badges */}
                     <div className="relative z-20 flex justify-between items-center text-xs text-white/90 font-mono pointer-events-none">
                       <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
@@ -4075,7 +4080,7 @@ export default function FluidHEDashboard() {
                                   setAudioUserActivated(true);
                                   if (videoRef.current) {
                                     videoRef.current.muted = false;
-                                    videoRef.current.play().catch(() => {});
+                                    videoRef.current.play().catch(() => { });
                                   }
                                 }}
                                 className="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-sm flex items-center gap-2 transition cursor-pointer shadow-lg shadow-sky-600/30"
@@ -4212,7 +4217,7 @@ export default function FluidHEDashboard() {
                         className={`flex flex-col items-center justify-center p-2.5 rounded-xl transition text-xs font-medium gap-1 ${isManualRecording
                           ? 'bg-red-600 text-white'
                           : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200'
-                        }`}
+                          }`}
                       >
                         <Disc className={`w-4 h-4 ${isManualRecording ? 'animate-spin' : 'text-red-400'}`} />
                         <span className="text-[11px]">{isManualRecording ? 'Stop Rekam' : 'Rekam Video'}</span>
@@ -4235,7 +4240,7 @@ export default function FluidHEDashboard() {
                         className={`flex flex-col items-center justify-center p-2.5 rounded-xl transition text-xs font-medium gap-1 ${!cctvAudioMuted
                           ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
                           : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200'
-                        }`}
+                          }`}
                       >
                         {!cctvAudioMuted ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
                         <span className="text-[11px]">{!cctvAudioMuted ? 'Suara ON' : 'Suara OFF'}</span>
@@ -4263,7 +4268,7 @@ export default function FluidHEDashboard() {
 
                 {/* Right (1 Col): Minimalist PTZ D-Pad Controller & Real-Time Telemetry */}
                 <div className="space-y-6">
-                  
+
                   {/* PTZ Rotasi Controller Card */}
                   <div className="p-5 bg-zinc-900 text-white rounded-2xl border border-zinc-800 space-y-4 shadow-sm">
                     <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
@@ -4278,7 +4283,7 @@ export default function FluidHEDashboard() {
                     {/* Minimalist Matte D-Pad */}
                     <div className="flex flex-col items-center justify-center py-2">
                       <div className="relative w-40 h-40 rounded-full bg-zinc-800/90 border border-zinc-700/80 shadow-lg flex items-center justify-center">
-                        
+
                         {/* UP */}
                         <button
                           type="button"
@@ -4409,130 +4414,130 @@ export default function FluidHEDashboard() {
                     </p>
                   </div>
 
-                    {/* Filter Tabs */}
-                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                      <button
-                        type="button"
-                        onClick={() => setActiveMediaTab('all')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeMediaTab === 'all'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        Semua ({cctvMediaList.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveMediaTab('snapshot')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'snapshot'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        <Camera className="w-3.5 h-3.5 text-sky-600" /> Foto ({cctvMediaList.filter(m => m.type === 'snapshot').length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveMediaTab('video')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'video'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        <Film className="w-3.5 h-3.5 text-red-600" /> Video ({cctvMediaList.filter(m => m.type === 'video').length})
-                      </button>
-                    </div>
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMediaTab('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeMediaTab === 'all'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                      Semua ({cctvMediaList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMediaTab('snapshot')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'snapshot'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                      <Camera className="w-3.5 h-3.5 text-sky-600" /> Foto ({cctvMediaList.filter(m => m.type === 'snapshot').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMediaTab('video')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'video'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                      <Film className="w-3.5 h-3.5 text-red-600" /> Video ({cctvMediaList.filter(m => m.type === 'video').length})
+                    </button>
                   </div>
+                </div>
 
-                  {/* Media Grid Cards */}
-                  {cctvMediaList.length === 0 ? (
-                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-slate-400 text-xs">
-                      Belum ada foto snapshot atau rekaman video yang diambil. Klik tombol <strong>Snapshot</strong> atau <strong>Rekam Video</strong> di atas.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pt-1">
-                      {cctvMediaList
-                        .filter(item => activeMediaTab === 'all' ? true : item.type === activeMediaTab)
-                        .map((media) => (
-                          <div
-                            key={media.id}
-                            className="p-4 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition space-y-3 group"
-                          >
-                            <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
-                              {media.type === 'snapshot' && media.url ? (
-                                <img src={media.url} alt={media.title} className="w-full h-full object-cover" />
-                              ) : media.type === 'video' && media.url ? (
-                                <video src={media.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                              ) : (
-                                <div className="text-center p-2 text-slate-400">
-                                  {media.type === 'snapshot' ? (
-                                    <Camera className="w-8 h-8 text-sky-400 mx-auto mb-1" />
-                                  ) : (
-                                    <Film className="w-8 h-8 text-red-400 mx-auto mb-1" />
-                                  )}
-                                  <span className="text-[10px] font-mono font-bold text-slate-300 block">
-                                    {media.type === 'snapshot' ? 'SNAPSHOT FOTO' : `VIDEO (${media.metadata?.duration || '15s'})`}
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded-md text-[10px] font-bold text-white">
-                                {media.type === 'snapshot' ? '📸 FOTO' : '🎥 VIDEO'}
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{media.title}</h4>
-                              <p className="text-[11px] text-slate-500 font-mono mt-0.5">{media.timestamp}</p>
-                            </div>
-
-                            {/* Watermark Telemetry Badges */}
-                            {media.metadata && (
-                              <div className="p-2 bg-white rounded-xl border border-slate-200/80 text-[10px] grid grid-cols-2 gap-1 font-mono text-slate-600">
-                                <div>TI1: <strong className="text-orange-600">{media.metadata.ti1}°C</strong></div>
-                                <div>TI2: <strong className="text-red-600">{media.metadata.ti2}°C</strong></div>
-                                <div>TI3: <strong className="text-cyan-600">{media.metadata.ti3}°C</strong></div>
-                                <div>FC1: <strong className="text-emerald-600">{media.metadata.flow} L/m</strong></div>
+                {/* Media Grid Cards */}
+                {cctvMediaList.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-slate-400 text-xs">
+                    Belum ada foto snapshot atau rekaman video yang diambil. Klik tombol <strong>Snapshot</strong> atau <strong>Rekam Video</strong> di atas.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pt-1">
+                    {cctvMediaList
+                      .filter(item => activeMediaTab === 'all' ? true : item.type === activeMediaTab)
+                      .map((media) => (
+                        <div
+                          key={media.id}
+                          className="p-4 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition space-y-3 group"
+                        >
+                          <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
+                            {media.type === 'snapshot' && media.url ? (
+                              <img src={media.url} alt={media.title} className="w-full h-full object-cover" />
+                            ) : media.type === 'video' && media.url ? (
+                              <video src={media.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                            ) : (
+                              <div className="text-center p-2 text-slate-400">
+                                {media.type === 'snapshot' ? (
+                                  <Camera className="w-8 h-8 text-sky-400 mx-auto mb-1" />
+                                ) : (
+                                  <Film className="w-8 h-8 text-red-400 mx-auto mb-1" />
+                                )}
+                                <span className="text-[10px] font-mono font-bold text-slate-300 block">
+                                  {media.type === 'snapshot' ? 'SNAPSHOT FOTO' : `VIDEO (${media.metadata?.duration || '15s'})`}
+                                </span>
                               </div>
                             )}
 
-                            {/* Action Buttons */}
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                              <button
-                                type="button"
-                                onClick={() => setPreviewMediaItem(media)}
-                                className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
-                              >
-                                <Eye className="w-3.5 h-3.5" /> Lihat
-                              </button>
-                              <div className="flex items-center gap-1">
-                                {media.url && (
-                                  <a
-                                    href={media.url}
-                                    download={media.type === 'snapshot'
-                                      ? `FluidHE_Snapshot_${media.id}.png`
-                                      : `FluidHE_Rekaman_${media.id}.webm`}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 p-1 hover:bg-emerald-50 rounded-lg transition"
-                                    title="Download"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteMediaItem(media.id)}
-                                  className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 p-1 hover:bg-red-50 rounded-lg transition"
-                                  title="Hapus Media"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded-md text-[10px] font-bold text-white">
+                              {media.type === 'snapshot' ? '📸 FOTO' : '🎥 VIDEO'}
                             </div>
                           </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
+
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{media.title}</h4>
+                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">{media.timestamp}</p>
+                          </div>
+
+                          {/* Watermark Telemetry Badges */}
+                          {media.metadata && (
+                            <div className="p-2 bg-white rounded-xl border border-slate-200/80 text-[10px] grid grid-cols-2 gap-1 font-mono text-slate-600">
+                              <div>TI1: <strong className="text-orange-600">{media.metadata.ti1}°C</strong></div>
+                              <div>TI2: <strong className="text-red-600">{media.metadata.ti2}°C</strong></div>
+                              <div>TI3: <strong className="text-cyan-600">{media.metadata.ti3}°C</strong></div>
+                              <div>FC1: <strong className="text-emerald-600">{media.metadata.flow} L/m</strong></div>
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMediaItem(media)}
+                              className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Lihat
+                            </button>
+                            <div className="flex items-center gap-1">
+                              {media.url && (
+                                <a
+                                  href={media.url}
+                                  download={media.type === 'snapshot'
+                                    ? `FluidHE_Snapshot_${media.id}.png`
+                                    : `FluidHE_Rekaman_${media.id}.webm`}
+                                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 p-1 hover:bg-emerald-50 rounded-lg transition"
+                                  title="Download"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMediaItem(media.id)}
+                                className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 p-1 hover:bg-red-50 rounded-lg transition"
+                                title="Hapus Media"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
 
               {/* Media Preview Modal */}
               {previewMediaItem && (
@@ -4649,7 +4654,7 @@ export default function FluidHEDashboard() {
                     <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
                       <FileText className="w-6 h-6 text-sky-600" /> Laporan Monitoring Heat Exchanger
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive (Fasilitas unduh Flashdisk dinonaktifkan)</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5 no-print">
@@ -4677,6 +4682,30 @@ export default function FluidHEDashboard() {
                 </div>
 
 
+
+                {/* Banner Informasi Keamanan & Proteksi Data Flashdisk */}
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200/90 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-emerald-500/20 text-emerald-700 rounded-xl shrink-0">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
+                        Proteksi Data HE: Ambil Data via Flashdisk Dinonaktifkan
+                        <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 font-extrabold rounded-full text-[10px]">Auto Cloud Storage</span>
+                      </h4>
+                      <p className="text-slate-600 mt-0.5 leading-relaxed">
+                        Pengambilan data manual menggunakan USB Flashdisk telah dinonaktifkan demi integritas & keamanan laboratorium. Seluruh log telemetri sensor Heat Exchanger otomatis terunggah dan tersimpan aman di Google Drive / Supabase Cloud DB.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCloudDriveAccess}
+                    className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-1.5 transition text-xs shrink-0 active:scale-95"
+                  >
+                    <Cloud className="w-4 h-4 text-emerald-200" /> Buka Cloud Drive
+                  </button>
+                </div>
 
                 <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/90 mb-6 space-y-1.5 text-xs">
                   <h1 className="text-base font-extrabold text-slate-900 tracking-wide">LAPORAN MONITORING HEAT EXCHANGER UAD</h1>
@@ -4981,7 +5010,7 @@ export default function FluidHEDashboard() {
                         onClick={() => {
                           try {
                             localStorage.removeItem('fluidhe_active_session');
-                          } catch (e) {}
+                          } catch (e) { }
                           setActiveSession(null);
                           alert('✅ Kunci sesi berhasil diakhiri! Pengguna lain sekarang dapat melakukan login.');
                         }}
@@ -5044,9 +5073,9 @@ export default function FluidHEDashboard() {
                             <td className="p-3 text-slate-600">{u.email}</td>
                             <td className="p-3">
                               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin'
-                                     ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                                     : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                 }`}>
+                                ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                }`}>
                                 {u.role}
                               </span>
                             </td>
@@ -5135,7 +5164,7 @@ export default function FluidHEDashboard() {
           {userToDelete && (
             <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="w-full max-w-sm bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
-                
+
                 <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
                   <Trash2 className="w-6 h-6" />
                 </div>
@@ -5188,7 +5217,7 @@ export default function FluidHEDashboard() {
           {showAddUserModal && (
             <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4">
-                
+
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2.5">
@@ -5525,31 +5554,26 @@ export default function FluidHEDashboard() {
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                     <div className="flex justify-between items-center text-[11px]">
                       <span className="font-bold text-slate-600">Kekuatan Keamanan Sandi:</span>
-                      <span className={`font-black ${
-                        strength.score <= 1
+                      <span className={`font-black ${strength.score <= 1
                           ? 'text-rose-600'
                           : strength.score <= 3
-                          ? 'text-amber-600'
-                          : 'text-emerald-600'
-                      }`}>
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                        }`}>
                         {strength.score <= 1 ? 'Sangat Lemah' : strength.score <= 3 ? 'Sedang' : 'Kuat & Aman ✓'}
                       </span>
                     </div>
 
                     {/* Strength Progress Bar */}
                     <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex gap-1">
-                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                        strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                      }`} />
-                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                        strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                      }`} />
-                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                        strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
-                      }`} />
-                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
-                        strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
-                      }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 1 ? (strength.score <= 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 2 ? (strength.score === 2 ? 'bg-rose-500' : strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 3 ? (strength.score === 3 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-transparent'
+                        }`} />
+                      <div className={`h-full flex-1 rounded-full transition-all duration-300 ${strength.score >= 4 ? 'bg-emerald-500' : 'bg-transparent'
+                        }`} />
                     </div>
 
                     {/* Security Requirements Checklist */}
@@ -5635,11 +5659,10 @@ export default function FluidHEDashboard() {
             setActiveTab('dashboard');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-            activeTab === 'dashboard'
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'dashboard'
               ? 'text-sky-600 font-extrabold bg-sky-50/80'
               : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-          }`}
+            }`}
         >
           <Activity className="w-5 h-5 shrink-0" />
           <span className="text-[10px]">Monitoring</span>
@@ -5651,11 +5674,10 @@ export default function FluidHEDashboard() {
             setActiveTab('control');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-            activeTab === 'control'
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'control'
               ? 'text-sky-600 font-extrabold bg-sky-50/80'
               : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-          }`}
+            }`}
         >
           <Sliders className="w-5 h-5 shrink-0" />
           <span className="text-[10px]">Kendali</span>
@@ -5667,11 +5689,10 @@ export default function FluidHEDashboard() {
             setActiveTab('cctv');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-            activeTab === 'cctv'
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'cctv'
               ? 'text-sky-600 font-extrabold bg-sky-50/80'
               : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-          }`}
+            }`}
         >
           <Video className="w-5 h-5 shrink-0" />
           <span className="text-[10px]">CCTV</span>
@@ -5683,11 +5704,10 @@ export default function FluidHEDashboard() {
             setActiveTab('logs');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-            activeTab === 'logs'
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'logs'
               ? 'text-sky-600 font-extrabold bg-sky-50/80'
               : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-          }`}
+            }`}
         >
           <FileText className="w-5 h-5 shrink-0" />
           <span className="text-[10px]">Data Log</span>
@@ -5700,11 +5720,10 @@ export default function FluidHEDashboard() {
               setActiveTab('users');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-              activeTab === 'users'
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'users'
                 ? 'text-sky-600 font-extrabold bg-sky-50/80'
                 : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-            }`}
+              }`}
           >
             <Users className="w-5 h-5 shrink-0" />
             <span className="text-[10px]">Users</span>
@@ -5716,11 +5735,10 @@ export default function FluidHEDashboard() {
               setActiveTab('alarms');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${
-              activeTab === 'alarms'
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer ${activeTab === 'alarms'
                 ? 'text-sky-600 font-extrabold bg-sky-50/80'
                 : 'text-slate-500 font-semibold hover:text-slate-800 active:bg-slate-100'
-            }`}
+              }`}
           >
             <Bell className="w-5 h-5 shrink-0" />
             <span className="text-[10px]">Alarm</span>
@@ -5758,6 +5776,18 @@ export default function FluidHEDashboard() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 text-xs text-slate-700">
+              {/* Alert Banner Flashdisk Disabled */}
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-3">
+                <div className="p-2 bg-amber-500/20 text-amber-800 rounded-xl shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-amber-900 text-sm">Ambil Data via Flashdisk Dinonaktifkan</h4>
+                  <p className="text-amber-800/90 mt-0.5 leading-relaxed">
+                    Sesuai standar operasional keamanan laboratorium, ekstraksi data manual menggunakan USB Flashdisk telah dinonaktifkan secara otomatis. Seluruh berkas telemetri HE diproteksi dan tersinkron langsung ke Cloud Drive institusi.
+                  </p>
+                </div>
+              </div>
 
 
               {/* Status Sync Cards */}
