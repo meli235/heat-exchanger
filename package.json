@@ -13,7 +13,7 @@
   "dependencies": {
     "@capacitor/android": "^7.0.0",
     "@capacitor/core": "^7.0.0",
-    "@supabase/supabase-js": "^2.112.0",
+    "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "nodemailer": "^9.0.5",

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { uploadToCloud } from '@/lib/supabase-upload';
 import { useSupabaseIntegration } from '@/lib/supabaseService';
 import GuidedTour from '@/components/GuidedTour';
 import {
@@ -556,6 +557,7 @@ export default function FluidHEDashboard() {
   // EZVIZ Mobile App Style Controls
   const [cctvAudioMuted, setCctvAudioMuted] = useState<boolean>(false);
   const [audioUserActivated, setAudioUserActivated] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [cctvVolume, setCctvVolume] = useState<number>(85);
   const [cctvMicActive, setCctvMicActive] = useState<boolean>(false);
   const [cctvDefinition, setCctvDefinition] = useState<'1080p' | '720p' | 'auto'>('1080p');
@@ -1125,7 +1127,7 @@ export default function FluidHEDashboard() {
       return;
     }
 
-    const timeStr = new Date().toLocaleTimeString('id-ID');
+    const timeStr = new Date().toLocaleTimeString('id-ID').replace(/:/g, '-');
     const dateStr = new Date().toLocaleDateString('id-ID');
 
     try {
@@ -1144,33 +1146,63 @@ export default function FluidHEDashboard() {
       ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
       ctx.font = 'bold 18px monospace';
       ctx.fillStyle = '#38bdf8';
-      ctx.fillText(`FluidHE Lab CCTV \u2022 ${dateStr} ${timeStr} WIB`, 16, canvas.height - 32);
+      ctx.fillText(`FluidHE Lab CCTV • ${dateStr} ${timeStr} WIB`, 16, canvas.height - 32);
       ctx.font = '14px monospace';
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`TI1: ${latestData.ti1}\u00b0C | TI2: ${latestData.ti2}\u00b0C | TI3: ${latestData.ti3}\u00b0C | TI4: ${latestData.ti4}\u00b0C | FC1: ${latestData.fc1} L/m`, 16, canvas.height - 10);
+      ctx.fillText(`TI1: ${latestData.ti1}°C | TI2: ${latestData.ti2}°C | TI3: ${latestData.ti3}°C | TI4: ${latestData.ti4}°C | FC1: ${latestData.fc1} L/m`, 16, canvas.height - 10);
 
-      const dataUrl = canvas.toDataURL('image/png');
+      const localDataUrl = canvas.toDataURL('image/png');
 
-      const newSnap = {
-        id: 'snap-' + Date.now(),
-        type: 'snapshot' as const,
-        title: `Snapshot Lab HE (${timeStr})`,
-        timestamp: `${dateStr} ${timeStr} WIB`,
-        url: dataUrl,
-        metadata: {
-          ti1: latestData.ti1,
-          ti2: latestData.ti2,
-          ti3: latestData.ti3,
-          ti4: latestData.ti4,
-          flow: latestData.fc1,
-          heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+
+        const fileName = `Snapshot_HE_${timeStr}.png`;
+
+        try {
+          const result = await uploadToCloud(blob, fileName, 'cctv-snapshots');
+
+          const newSnap = {
+            id: 'snap-' + Date.now(),
+            type: 'snapshot' as const,
+            title: `Snapshot Lab HE (${timeStr})`,
+            timestamp: `${dateStr} ${timeStr} WIB`,
+            url: result.url || localDataUrl,
+            metadata: {
+              ti1: latestData.ti1,
+              ti2: latestData.ti2,
+              ti3: latestData.ti3,
+              ti4: latestData.ti4,
+              flow: latestData.fc1,
+              heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+            }
+          };
+
+          setCctvMediaList((prev) => [newSnap, ...prev]);
+          triggerCctvToast('📸 Snapshot tersimpan di Cloud Storage!', 'success');
+        } catch (err: any) {
+          console.error('Snapshot Cloud upload error:', err);
+          const fallbackSnap = {
+            id: 'snap-' + Date.now(),
+            type: 'snapshot' as const,
+            title: `Snapshot Lab HE (${timeStr})`,
+            timestamp: `${dateStr} ${timeStr} WIB`,
+            url: localDataUrl,
+            metadata: {
+              ti1: latestData.ti1,
+              ti2: latestData.ti2,
+              ti3: latestData.ti3,
+              ti4: latestData.ti4,
+              flow: latestData.fc1,
+              heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+            }
+          };
+          setCctvMediaList((prev) => [fallbackSnap, ...prev]);
+          triggerCctvToast('📸 Snapshot disimpan ke Galeri!', 'success');
         }
-      };
-      setCctvMediaList((prev) => [newSnap, ...prev]);
-      triggerCctvToast('\ud83d\udcf8 Snapshot berhasil diambil dari kamera & disimpan ke Galeri!', 'success');
+      }, 'image/png');
     } catch (err) {
       console.error('Snapshot capture error:', err);
-      triggerCctvToast('\u26a0\ufe0f Gagal mengambil snapshot dari kamera', 'warning');
+      triggerCctvToast('⚠️ Gagal mengambil snapshot dari kamera', 'warning');
     }
   };
 
@@ -1179,7 +1211,7 @@ export default function FluidHEDashboard() {
       // START recording
       const stream = webrtcStreamRef.current;
       if (!stream || !webrtcConnected) {
-        triggerCctvToast('\u26a0\ufe0f Tidak dapat merekam — kamera belum terhubung', 'warning');
+        triggerCctvToast('⚠️ Tidak dapat merekam — kamera belum terhubung', 'warning');
         return;
       }
 
@@ -1191,7 +1223,7 @@ export default function FluidHEDashboard() {
           : '';
 
         if (!mimeType) {
-          triggerCctvToast('\u26a0\ufe0f Browser tidak mendukung perekaman video', 'warning');
+          triggerCctvToast('⚠️ Browser tidak mendukung perekaman video', 'warning');
           return;
         }
 
@@ -1207,40 +1239,66 @@ export default function FluidHEDashboard() {
 
         recorder.start(1000);
         setIsManualRecording(true);
-        triggerCctvToast('\ud83d\udd34 Perekaman video live dimulai...', 'warning');
+        triggerCctvToast('🔴 Perekaman video live dimulai...', 'warning');
       } catch (err) {
         console.error('MediaRecorder error:', err);
-        triggerCctvToast('\u26a0\ufe0f Gagal memulai perekaman video', 'warning');
+        triggerCctvToast('⚠️ Gagal memulai perekaman video', 'warning');
       }
     } else {
       // STOP recording
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== 'inactive') {
-        recorder.onstop = () => {
+        recorder.onstop = async () => {
           const dur = recordingSeconds;
-          const timeStr = new Date().toLocaleTimeString('id-ID');
+          const timeStr = new Date().toLocaleTimeString('id-ID').replace(/:/g, '-');
           const dateStr = new Date().toLocaleDateString('id-ID');
           const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
-          const videoUrl = URL.createObjectURL(blob);
+          const localVideoUrl = URL.createObjectURL(blob);
+          const fileName = `Recording_HE_${dur}s_${timeStr}.webm`;
 
-          const newVideo = {
-            id: 'rec-' + Date.now(),
-            type: 'video' as const,
-            title: `Rekaman Lab HE (${dur}s)`,
-            timestamp: `${dateStr} ${timeStr} WIB`,
-            url: videoUrl,
-            metadata: {
-              ti1: latestData.ti1,
-              ti2: latestData.ti2,
-              ti3: latestData.ti3,
-              ti4: latestData.ti4,
-              flow: latestData.fc1,
-              duration: `${dur} Detik`,
-              heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
-            }
-          };
-          setCctvMediaList((prev) => [newVideo, ...prev]);
-          triggerCctvToast(`\ud83d\udcbe Rekaman video (${dur}s) berhasil disimpan ke Galeri!`, 'success');
+          try {
+            const result = await uploadToCloud(blob, fileName, 'cctv-recordings');
+
+            const newVideo = {
+              id: 'rec-' + Date.now(),
+              type: 'video' as const,
+              title: `Rekaman Lab HE (${dur}s)`,
+              timestamp: `${dateStr} ${timeStr} WIB`,
+              url: result.url || localVideoUrl,
+              metadata: {
+                ti1: latestData.ti1,
+                ti2: latestData.ti2,
+                ti3: latestData.ti3,
+                ti4: latestData.ti4,
+                flow: latestData.fc1,
+                duration: `${dur} Detik`,
+                heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+              }
+            };
+
+            setCctvMediaList((prev) => [newVideo, ...prev]);
+            triggerCctvToast(`💾 Rekaman ${dur}s tersimpan di Cloud Storage!`, 'success');
+          } catch (err: any) {
+            console.error('Recording Cloud upload error:', err);
+            const fallbackVideo = {
+              id: 'rec-' + Date.now(),
+              type: 'video' as const,
+              title: `Rekaman Lab HE (${dur}s)`,
+              timestamp: `${dateStr} ${timeStr} WIB`,
+              url: localVideoUrl,
+              metadata: {
+                ti1: latestData.ti1,
+                ti2: latestData.ti2,
+                ti3: latestData.ti3,
+                ti4: latestData.ti4,
+                flow: latestData.fc1,
+                duration: `${dur} Detik`,
+                heater: dualHeaterState.powerWatt > 0 ? `${dualHeaterState.powerWatt}W` : 'OFF'
+              }
+            };
+            setCctvMediaList((prev) => [fallbackVideo, ...prev]);
+            triggerCctvToast(`💾 Rekaman video (${dur}s) disimpan ke Galeri!`, 'success');
+          }
         };
         recorder.stop();
       }
@@ -1570,6 +1628,48 @@ export default function FluidHEDashboard() {
 
   const exportPDFReport = () => {
     window.print();
+  };
+
+  const handleExportAndUpload = async () => {
+    try {
+      setIsUploading(true);
+      triggerCctvToast('⏳ Mengolah data & mengunggah file ke Supabase Cloud...', 'info');
+
+      const wb = XLSX.utils.book_new();
+      const wsData = [
+        ['Waktu Timestamp', 'TI1 Hot In (°C)', 'TI2 Hot Out (°C)', 'TI3 Cold In (°C)', 'TI4 Cold Out (°C)', 'FC1 Laju Alir (L/m)', 'Mode Aliran', 'Status Heater'],
+        ...filteredLogsData.map((d) => [
+          d.timestamp,
+          d.ti1,
+          d.ti2,
+          d.ti3,
+          d.ti4,
+          d.fc1,
+          d.mode,
+          d.heater1Active || d.heater2Active ? 'ON' : 'OFF'
+        ])
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      XLSX.utils.book_append_sheet(wb, ws, 'Telemetry');
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      
+      const fileName = `HE_Telemetry_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      
+      const result = await uploadToCloud(blob, fileName, 'telemetry-logs');
+      XLSX.writeFile(wb, fileName);
+
+      triggerCctvToast('✅ File Excel tersimpan di Cloud Storage!', 'success');
+      alert(`✅ File tersimpan di Supabase Cloud Storage!\n\n🔗 URL: ${result.url}`);
+    } catch (err: any) {
+      console.error('Excel upload error:', err);
+      triggerCctvToast('❌ Gagal upload Excel ke Cloud: ' + (err?.message || 'Error'), 'warning');
+      alert(`❌ Gagal upload: ${err?.message || 'Error'}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   // ─── ADD USER HANDLER ───
@@ -4556,10 +4656,18 @@ export default function FluidHEDashboard() {
 
                   <div className="flex flex-wrap items-center gap-2.5 no-print">
                     <button
-                      onClick={handleCloudDriveAccess}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition active:scale-95"
+                      type="button"
+                      onClick={handleExportAndUpload}
+                      disabled={isUploading}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition active:scale-95 cursor-pointer"
                     >
-                      <CloudCheck className="w-4 h-4 text-emerald-200 animate-pulse" /> Otomatis Tersimpan di Cloud Drive
+                      <FileText className="w-4 h-4 text-emerald-200" /> {isUploading ? 'Mengunggah ke Cloud...' : 'Ekspor & Upload Excel (Cloud)'}
+                    </button>
+                    <button
+                      onClick={handleCloudDriveAccess}
+                      className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-600/20 flex items-center gap-2 transition active:scale-95"
+                    >
+                      <CloudCheck className="w-4 h-4 text-sky-200 animate-pulse" /> Akses Supabase Storage
                     </button>
                     <button
                       onClick={exportPDFReport}
