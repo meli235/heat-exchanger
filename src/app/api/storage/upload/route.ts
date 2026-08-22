@@ -6,6 +6,35 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_P
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+async function ensureBucketExists(bucketName: string): Promise<string> {
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (!listError && buckets && buckets.length > 0) {
+      const found = buckets.find((b) => b.name === bucketName || b.id === bucketName);
+      if (found) return found.name;
+    }
+
+    // Try to create the bucket automatically if it doesn't exist
+    const { data: newBucket, error: createError } = await supabase.storage.createBucket(bucketName, {
+      public: true,
+      allowedMimeTypes: undefined,
+      fileSizeLimit: undefined,
+    });
+
+    if (!createError && newBucket) {
+      return bucketName;
+    }
+
+    if (!listError && buckets && buckets.length > 0) {
+      return buckets[0].name;
+    }
+  } catch (e) {
+    console.error('Bucket check error:', e);
+  }
+  return bucketName;
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -20,48 +49,47 @@ export async function POST(request: Request) {
     const filePath = `${folder}/${Date.now()}_${fileName}`;
     const fileBuffer = await file.arrayBuffer();
 
-    const bucketName = 'fluidhe-storage';
+    let targetBucket = 'fluidhe-storage';
+    targetBucket = await ensureBucketExists(targetBucket);
 
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(bucketName)
+    // Upload to target bucket
+    let { data: uploadData, error: uploadError } = await supabase.storage
+      .from(targetBucket)
       .upload(filePath, fileBuffer, {
         contentType: file.type || 'application/octet-stream',
         upsert: true,
       });
 
-    if (uploadError) {
-      console.error('Supabase Storage upload error:', uploadError);
-      const { data: fallbackData, error: fallbackError } = await supabase.storage
-        .from('public')
+    if (uploadError && (uploadError.message?.toLowerCase().includes('not found') || uploadError.message?.toLowerCase().includes('bucket'))) {
+      // Try creating bucket on-demand
+      await supabase.storage.createBucket(targetBucket, { public: true });
+      const retryResult = await supabase.storage
+        .from(targetBucket)
         .upload(filePath, fileBuffer, {
           contentType: file.type || 'application/octet-stream',
           upsert: true,
         });
-
-      if (fallbackError) {
-        return NextResponse.json({
-          success: false,
-          error: uploadError.message || fallbackError.message || 'Supabase storage upload failed',
-        }, { status: 500 });
-      }
-
-      const { data: publicUrlData } = supabase.storage.from('public').getPublicUrl(filePath);
-      return NextResponse.json({
-        success: true,
-        url: publicUrlData?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/public/${filePath}`,
-        path: filePath,
-        fileName: fileName,
-      });
+      uploadData = retryResult.data;
+      uploadError = retryResult.error;
     }
 
-    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+    if (uploadError) {
+      console.error('Supabase Storage upload error:', uploadError);
+      return NextResponse.json({
+        success: false,
+        error: `Supabase Storage error: ${uploadError.message}. Pastikan bucket 'fluidhe-storage' (Public) sudah dibuat di Dashboard Supabase.`,
+      }, { status: 400 });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from(targetBucket).getPublicUrl(filePath);
+    const publicUrl = publicUrlData?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${targetBucket}/${filePath}`;
 
     return NextResponse.json({
       success: true,
-      url: publicUrlData?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${filePath}`,
+      url: publicUrl,
       path: filePath,
       fileName: fileName,
+      bucket: targetBucket,
     });
   } catch (err: any) {
     console.error('Storage upload route error:', err);
