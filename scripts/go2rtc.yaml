@@ -4,8 +4,14 @@ api:
 
 streams:
   he_cctv:
-    - "rtsp://admin:TJPCYS@192.168.101.4:554/Streaming/Channels/101#backchannel=0"
+    - "rtsp://admin:TJPCYS@192.168.1.12:554/Streaming/Channels/101#backchannel=0"
     - "ffmpeg:he_cctv#audio=opus"
+
+# ⬇️ KONFIGURASI 24/7 RECORDING
+record:
+  enabled: true
+  path: ./records/{name}/{date}_{time}.mp4
+  keep: 7d
 
 webrtc:
   listen: ":8555"

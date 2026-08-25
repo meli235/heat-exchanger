@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // URL dari Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTiJ0_ki40LB17SKND7sfadcxvIYvbhIcUYUJbAnvOyOjc0gTbBXO0vJP-raTOSriS9g/exec';
+const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycby0O1mlLd-szQIrWjhUFw8YsibiyFM2kdVcVyM0w9h9QaDQDPDSPYggKf3rjKOxYAWu/exec';
 
 export async function POST(req: NextRequest) {
   try {

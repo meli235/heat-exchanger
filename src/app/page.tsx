@@ -6,6 +6,7 @@ import { uploadToCloud } from '@/lib/supabase-upload';
 import { uploadToDrive } from '@/lib/drive-upload';
 import { useSupabaseIntegration } from '@/lib/supabaseService';
 import GuidedTour from '@/components/GuidedTour';
+import CCTVHistory from '@/components/CCTVHistory';
 import {
   Droplets,
   Thermometer,
@@ -42,6 +43,7 @@ import {
   Play,
   Pause,
   Maximize2,
+  Folder,
   Volume2,
   VolumeX,
   X,
@@ -140,13 +142,38 @@ export default function FluidHEDashboard() {
     latestTelemetry: supabaseTelemetry,
     telemetryStream,
     deviceControls: supabaseControls,
+    activeMomentaryButtons,
     isUpdatingControl,
     handleFlowModeChange,
     handleControlModeChange,
     handleHeaterPowerToggle,
     handleTargetTempChange,
-    handleServoAngleChange
+    handleServoAngleChange,
+    handleTargetFlowChange,
+    handleUapStatusToggle,
+    handleAirDinginToggle,
+    handleMomentaryButtonPress
   } = useSupabaseIntegration();
+
+  // Dynamic Temperature Labels based on Active flow_mode ("COUNTER" vs "CO-CURRENT")
+  const tempLabels = useMemo(() => {
+    const isCounter = (supabaseControls?.flow_mode || 'COUNTER') === 'COUNTER';
+    if (isCounter) {
+      return {
+        t1: 'TI1 (Hot Inlet)',
+        t2: 'TI2 (Hot Outlet)',
+        t3: 'TI3 (Cold Inlet)',
+        t4: 'TI4 (Cold Outlet)',
+      };
+    } else {
+      return {
+        t1: 'TI1 (Hot Outlet)',
+        t2: 'TI2 (Hot Inlet)',
+        t3: 'TI3 (Cold Outlet)',
+        t4: 'TI4 (Cold Inlet)',
+      };
+    }
+  }, [supabaseControls?.flow_mode]);
 
   const [inputAnonKey, setInputAnonKey] = useState<string>('');
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
@@ -220,11 +247,31 @@ export default function FluidHEDashboard() {
   const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('admin');
 
   // ─── NAVIGATION & TOUR STATE ───
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'logs' | 'alarms' | 'users'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'cctv-history' | 'logs' | 'alarms' | 'users'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isTourOpen, setIsTourOpen] = useState<boolean>(false);
   const [isCloudDriveModalOpen, setIsCloudDriveModalOpen] = useState<boolean>(false);
   const [cloudLastSyncTime, setCloudLastSyncTime] = useState<string>(new Date().toLocaleTimeString('id-ID'));
+
+  // ─── 24/7 CCTV HISTORY RECORDINGS STATES ───
+  const [recordings, setRecordings] = useState<any[]>([]);
+  const [activeRecording, setActiveRecording] = useState<string | null>(null);
+
+  const fetchRecordings = async () => {
+    try {
+      const res = await fetch('/api/cctv/recordings');
+      const data = await res.json();
+      setRecordings(data.recordings || []);
+    } catch (err) {
+      console.error('Fetch recordings error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'cctv-history') {
+      fetchRecordings();
+    }
+  }, [activeTab]);
 
   // ─── OPERATOR PRACTICE SESSION COUNTDOWN STATE (ADMIN MANAGED) ───
   const [operatorSessionLimit, setOperatorSessionLimit] = useState<number>(30); // minutes
@@ -992,51 +1039,45 @@ export default function FluidHEDashboard() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') return resolve();
-        const handler = () => {
-          if (pc.iceGatheringState === 'complete') {
-            pc.removeEventListener('icegatheringstatechange', handler);
-            resolve();
-          }
-        };
-        pc.addEventListener('icegatheringstatechange', handler);
-        setTimeout(resolve, 3000);
-      });
-
       const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
       let resp: Response | null = null;
       try {
         resp = await fetch(`http://${host}:8889/api/webrtc?src=he_cctv`, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
-          body: pc.localDescription?.sdp,
+          body: pc.localDescription?.sdp || offer.sdp,
         });
       } catch (fErr) {
         if (host !== 'localhost') {
-          resp = await fetch('http://localhost:8889/api/webrtc?src=he_cctv', {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: pc.localDescription?.sdp,
-          });
-        } else {
-          throw fErr;
+          try {
+            resp = await fetch('http://localhost:8889/api/webrtc?src=he_cctv', {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain' },
+              body: pc.localDescription?.sdp || offer.sdp,
+            });
+          } catch (ignored) {}
         }
       }
 
-      if (!resp || !resp.ok) throw new Error(`Server go2rtc error: HTTP ${resp?.status || 'Unknown'}`);
+      if (!resp || !resp.ok) {
+        setWebrtcError('Kamera CCTV offline / Gagal menyambung go2rtc');
+        setWebrtcConnected(false);
+        return;
+      }
 
       const answer = await resp.text();
       await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }));
+      setWebrtcConnected(true);
+      setWebrtcError(null);
     } catch (err: any) {
-      console.error('WebRTC connect error:', err);
-      setWebrtcError(err?.message || 'Gagal menyambung ke kamera via WebRTC');
+      console.warn('WebRTC connect notice:', err?.message || err);
+      setWebrtcError('Kamera CCTV offline');
       setWebrtcConnected(false);
     }
   };
 
   useEffect(() => {
-    if (cctvStreamSource === 'local') {
+    if (activeTab === 'cctv' && cctvStreamSource === 'local') {
       connectWebRTC();
     }
     return () => {
@@ -1046,7 +1087,7 @@ export default function FluidHEDashboard() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cctvStreamSource]);
+  }, [cctvStreamSource, activeTab]);
 
   // Sync audio mute with video element — uses ref to bypass browser autoplay restrictions
   useEffect(() => {
@@ -1160,6 +1201,12 @@ export default function FluidHEDashboard() {
         const fileName = `Snapshot_HE_${timeStr}.png`;
 
         try {
+          // Upload to Google Drive (cctv-snapshots folder)
+          const driveForm = new FormData();
+          driveForm.append('file', new File([blob], fileName, { type: 'image/png' }));
+          driveForm.append('folder', 'cctv-snapshots');
+          fetch('/api/drive', { method: 'POST', body: driveForm }).catch(err => console.error('Drive snapshot upload notice:', err));
+
           const result = await uploadToCloud(blob, fileName, 'cctv-snapshots');
 
           const newSnap = {
@@ -2875,6 +2922,8 @@ export default function FluidHEDashboard() {
               <Video className="w-4 h-4" /> CCTV Feed
             </button>
 
+
+
             <button
               onClick={() => {
                 setActiveTab('logs');
@@ -2953,6 +3002,38 @@ export default function FluidHEDashboard() {
         <main className="flex-1 p-3.5 sm:p-4 md:p-6 space-y-6 overflow-y-auto pb-24 md:pb-6">
 
           {/* SAFETY / WARNING BANNERS */}
+          {/* 🚨 CRITICAL WARNING SYSTEM POP-UP BANNER (WARN_BKA_UAP / PRESSURE & TEMP ALERT) */}
+          {(supabaseTelemetry?.warning_status === 'WARN_BKA_UAP' ||
+            (supabaseTelemetry && (supabaseTelemetry.pressure > 2.0 || supabaseTelemetry.temp_1 > 65.0 || supabaseTelemetry.temp_2 > 65.0))) && (
+            <div className="p-4 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-2 border-red-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl shadow-red-600/30 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/20 rounded-xl shrink-0">
+                  <AlertTriangle className="w-7 h-7 text-white animate-bounce" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm sm:text-base text-white tracking-wide uppercase flex items-center gap-2">
+                    PERINGATAN BAHAYA: Tekanan atau Suhu Kritis!
+                    <span className="px-2 py-0.5 bg-white text-red-700 text-[10px] font-black rounded-full uppercase">WARN_BKA_UAP</span>
+                  </h4>
+                  <p className="text-xs text-red-100 font-medium mt-0.5">
+                    Harap Buka Katup Uap Sekarang! Tekanan terdeteksi &gt; 2.0 Bar atau Suhu &gt; 65°C.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleUapStatusToggle(true);
+                  triggerSyncFeedback('Katup Uap', 'DIBUKA (DARURAT BAHAYA)');
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-white hover:bg-red-50 text-red-700 rounded-xl text-xs font-black shadow-lg transition active:scale-95 shrink-0 flex items-center justify-center gap-2 cursor-pointer border border-red-200"
+              >
+                <Power className="w-4 h-4 text-red-600" />
+                BUKA KATUP UAP SEKARANG
+              </button>
+            </div>
+          )}
+
           {primingNotice && (
             <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl flex justify-between items-center text-xs text-amber-900 shadow-sm animate-fade-in">
               <div className="flex items-center gap-3">
@@ -2997,7 +3078,7 @@ export default function FluidHEDashboard() {
                   title="Klik untuk membuka Kontrol Pemanas & Suhu"
                 >
                   <div className="flex justify-between items-start">
-                    <span className="text-xs font-semibold text-slate-500">TI1 (Hot Inlet)</span>
+                    <span className="text-xs font-semibold text-slate-500">{tempLabels.t1}</span>
                     <span className="p-1.5 bg-orange-50 text-orange-600 rounded-xl">
                       <Thermometer className="w-4 h-4" />
                     </span>
@@ -3020,7 +3101,7 @@ export default function FluidHEDashboard() {
                   title="Klik untuk membuka Kontrol Pemanas & Suhu"
                 >
                   <div className="flex justify-between items-start">
-                    <span className="text-xs font-semibold text-slate-500">TI2 (Hot Outlet - Heater 2)</span>
+                    <span className="text-xs font-semibold text-slate-500">{tempLabels.t2}</span>
                     <span className="p-1.5 bg-orange-50 text-orange-600 rounded-xl">
                       <Thermometer className="w-4 h-4" />
                     </span>
@@ -3041,7 +3122,7 @@ export default function FluidHEDashboard() {
                   title="Klik untuk membuka Kontrol Pemanas & Suhu"
                 >
                   <div className="flex justify-between items-start">
-                    <span className="text-xs font-semibold text-slate-500">TI3 (Cold Inlet)</span>
+                    <span className="text-xs font-semibold text-slate-500">{tempLabels.t3}</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
                       <Thermometer className="w-4 h-4" />
                     </span>
@@ -3062,7 +3143,7 @@ export default function FluidHEDashboard() {
                   title="Klik untuk membuka Kontrol Pemanas & Suhu"
                 >
                   <div className="flex justify-between items-start">
-                    <span className="text-xs font-semibold text-slate-500">TI4 (Cold Outlet)</span>
+                    <span className="text-xs font-semibold text-slate-500">{tempLabels.t4}</span>
                     <span className="p-1.5 bg-cyan-50 text-cyan-600 rounded-xl">
                       <Thermometer className="w-4 h-4" />
                     </span>
@@ -3158,65 +3239,7 @@ export default function FluidHEDashboard() {
                 </div>
               </div>
 
-              {/* DUAL HEATER & SOLENOID VALVE SYSTEM STATUS CARDS */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Dual Heater Card */}
-                <div className="asklepios-card p-5 bg-white space-y-3 border-l-4 border-l-orange-500">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-orange-600" /> Sistem Pemanas Ganda (Double Heater)
-                    </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800">
-                      Daya: {dualHeaterState.powerWatt}W
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    {dualHeaterState.description}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${dualHeaterState.h1 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}>
-                      <span>Heater 1 (500W)</span>
-                      <span>{dualHeaterState.h1 ? '⚡ ON' : 'OFF'}</span>
-                    </div>
-                    <div className={`p-2.5 rounded-xl border flex justify-between items-center font-bold ${dualHeaterState.h2 ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}>
-                      <span>Heater 2 (500W)</span>
-                      <span>{dualHeaterState.h2 ? '⚡ ON' : 'OFF'}</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Solenoid Valves Status Card */}
-                <div className="asklepios-card p-5 bg-white space-y-3 border-l-4 border-l-sky-500">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
-                      <ArrowRightLeft className="w-4 h-4 text-sky-600" /> Katup Solenoid & Fail-Safe Pasif
-                    </h4>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${solenoidValves.isFailSafeActive ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
-                      }`}>
-                      {operationMode}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    {solenoidValves.modeNotice}
-                  </p>
-                  <div className="grid grid-cols-4 gap-1.5 text-[11px] pt-1 text-center">
-                    <div className={`p-2 rounded-lg border font-bold ${solenoidValves.sv1.badgeClass}`}>
-                      SV1 (NC)<br /><span className="text-[10px] font-extrabold">{solenoidValves.sv1.state.split(' ')[0]}</span>
-                    </div>
-                    <div className={`p-2 rounded-lg border font-bold ${solenoidValves.sv2.badgeClass}`}>
-                      SV2 (NO)<br /><span className="text-[10px] font-extrabold">{solenoidValves.sv2.state.split(' ')[0]}</span>
-                    </div>
-                    <div className={`p-2 rounded-lg border font-bold ${solenoidValves.sv3.badgeClass}`}>
-                      SV3 (NC)<br /><span className="text-[10px] font-extrabold">{solenoidValves.sv3.state.split(' ')[0]}</span>
-                    </div>
-                    <div className={`p-2 rounded-lg border font-bold ${solenoidValves.sv4.badgeClass}`}>
-                      SV4 (NO)<br /><span className="text-[10px] font-extrabold">{solenoidValves.sv4.state.split(' ')[0]}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* 2. Real-Time Temperature & Pressure Multi-Line Chart */}
               <div className="asklepios-card p-6 bg-white">
@@ -3568,28 +3591,28 @@ export default function FluidHEDashboard() {
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs">
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">TI1 (Hot In)</span>
+                      <span className="text-[10px] text-slate-500 font-semibold block">{tempLabels.t1}</span>
                       <strong className="text-orange-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_1.toFixed(1) : latestData.ti1.toFixed(1)} °C
                       </strong>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">TI2 (Hot Out)</span>
+                      <span className="text-[10px] text-slate-500 font-semibold block">{tempLabels.t2}</span>
                       <strong className="text-orange-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_2.toFixed(1) : latestData.ti2.toFixed(1)} °C
                       </strong>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">TI3 (Cold In)</span>
+                      <span className="text-[10px] text-slate-500 font-semibold block">{tempLabels.t3}</span>
                       <strong className="text-cyan-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_3.toFixed(1) : latestData.ti3.toFixed(1)} °C
                       </strong>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                      <span className="text-[10px] text-slate-500 font-semibold block">TI4 (Cold Out)</span>
+                      <span className="text-[10px] text-slate-500 font-semibold block">{tempLabels.t4}</span>
                       <strong className="text-cyan-600 font-extrabold text-sm sm:text-base">
                         {supabaseTelemetry ? supabaseTelemetry.temp_4.toFixed(1) : latestData.ti4.toFixed(1)} °C
                       </strong>
@@ -3914,6 +3937,164 @@ export default function FluidHEDashboard() {
                       </div>
                     </div>
 
+                    {/* Slider/Input Target Flow Rate (target_flow 0.0 - 10.0 L/min) */}
+                    <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold text-slate-800">
+                        <span className="flex items-center gap-1.5 text-emerald-900">
+                          Target Flow Rate (Debit Flow)
+                        </span>
+                        <strong className="text-emerald-700 font-black text-base">
+                          {(supabaseControls.target_flow ?? 5.0).toFixed(1)} L/min
+                        </strong>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="10.0"
+                        step="0.1"
+                        value={supabaseControls.target_flow ?? 5.0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          handleTargetFlowChange(val);
+                          triggerSyncFeedback('Target Flow Rate', `${val.toFixed(1)} L/min`);
+                        }}
+                        disabled={emergencyStopped}
+                        className="w-full h-2 bg-emerald-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-emerald-700 font-semibold">
+                        <span>0.0 L/min</span>
+                        <span>5.0 L/min</span>
+                        <span>10.0 L/min</span>
+                      </div>
+                    </div>
+
+                    {/* Toggle Switch Katup Uap (uap_status) */}
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-800">Katup Uap (Uap Status)</label>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                          supabaseControls.uap_status ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {supabaseControls.uap_status ? 'OPEN (TERBUKA)' : 'CLOSED (TERTUTUP)'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !supabaseControls.uap_status;
+                          handleUapStatusToggle(nextVal);
+                          triggerSyncFeedback('Katup Uap', nextVal ? 'DIBUKA' : 'DITUTUP');
+                        }}
+                        disabled={emergencyStopped}
+                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
+                          supabaseControls.uap_status
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        <Power className="w-4 h-4" />
+                        {supabaseControls.uap_status ? 'Tutup Katup Uap' : 'Buka Katup Uap'}
+                      </button>
+                    </div>
+
+                    {/* Toggle Switch Katup Air Dingin (air_dingin) */}
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-800">Katup Air Dingin</label>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                          supabaseControls.air_dingin ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {supabaseControls.air_dingin ? 'OPEN (TERBUKA)' : 'CLOSED (TERTUTUP)'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !supabaseControls.air_dingin;
+                          handleAirDinginToggle(nextVal);
+                          triggerSyncFeedback('Katup Air Dingin', nextVal ? 'DIBUKA' : 'DITUTUP');
+                        }}
+                        disabled={emergencyStopped}
+                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
+                          supabaseControls.air_dingin
+                            ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        <Power className="w-4 h-4" />
+                        {supabaseControls.air_dingin ? 'Tutup Katup Air Dingin' : 'Buka Katup Air Dingin'}
+                      </button>
+                    </div>
+
+                    {/* Momentary Servo Motor Action Buttons (btn_up, btn_onoff, btn_down) */}
+                    <div className="p-4 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 rounded-2xl border border-indigo-200 space-y-3 col-span-1 md:col-span-2 lg:col-span-3">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="text-xs font-extrabold text-indigo-900 flex items-center gap-1.5">
+                            <Sliders className="w-4 h-4 text-indigo-600" /> Kontrol Tombol Servo Motor (Momentary Pulse 1.5 Detik)
+                          </h4>
+                          <p className="text-[11px] text-indigo-600/80 mt-0.5">
+                            Mengirim sinyal pulsa 1.5s (true ➔ 1500ms ➔ false) ke mikrokontroler untuk menekan tombol fisik servo.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Button UP */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMomentaryButtonPress('btn_up');
+                            triggerSyncFeedback('Servo Button UP', 'PULSE 1.5s TRIGGERED');
+                          }}
+                          disabled={emergencyStopped || activeMomentaryButtons.btn_up}
+                          className={`py-3 px-4 rounded-xl text-xs font-black transition flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+                            activeMomentaryButtons.btn_up
+                              ? 'bg-emerald-600 text-white ring-4 ring-emerald-300 animate-pulse'
+                              : 'bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 hover:border-emerald-400'
+                          }`}
+                        >
+                          <span className="text-sm font-extrabold">▲ UP</span>
+                          <span className="text-[9.5px] font-mono opacity-80">btn_up (1.5s)</span>
+                        </button>
+
+                        {/* Button ON/OFF */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMomentaryButtonPress('btn_onoff');
+                            triggerSyncFeedback('Servo Button ON/OFF', 'PULSE 1.5s TRIGGERED');
+                          }}
+                          disabled={emergencyStopped || activeMomentaryButtons.btn_onoff}
+                          className={`py-3 px-4 rounded-xl text-xs font-black transition flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+                            activeMomentaryButtons.btn_onoff
+                              ? 'bg-purple-600 text-white ring-4 ring-purple-300 animate-pulse'
+                              : 'bg-white hover:bg-purple-50 text-purple-700 border border-purple-300 hover:border-purple-400'
+                          }`}
+                        >
+                          <span className="text-sm font-extrabold">⏻ ON / OFF</span>
+                          <span className="text-[9.5px] font-mono opacity-80">btn_onoff (1.5s)</span>
+                        </button>
+
+                        {/* Button DOWN */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMomentaryButtonPress('btn_down');
+                            triggerSyncFeedback('Servo Button DOWN', 'PULSE 1.5s TRIGGERED');
+                          }}
+                          disabled={emergencyStopped || activeMomentaryButtons.btn_down}
+                          className={`py-3 px-4 rounded-xl text-xs font-black transition flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+                            activeMomentaryButtons.btn_down
+                              ? 'bg-amber-600 text-white ring-4 ring-amber-300 animate-pulse'
+                              : 'bg-white hover:bg-amber-50 text-amber-700 border border-amber-300 hover:border-amber-400'
+                          }`}
+                        >
+                          <span className="text-sm font-extrabold">▼ DOWN</span>
+                          <span className="text-[9.5px] font-mono opacity-80">btn_down (1.5s)</span>
+                        </button>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
@@ -4160,18 +4341,6 @@ export default function FluidHEDashboard() {
                           NVR: <strong className="text-emerald-400">{cctvRecording ? '24/7 Aktif' : 'Jeda'}</strong>
                         </span>
 
-                        {cctvStreamSource === 'local' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCctvStreamSource('demo');
-                              triggerCctvToast('Mengalihkan ke Mode Simulasi Video Lab', 'success');
-                            }}
-                            className="ml-2 px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] hover:bg-amber-500/30 transition"
-                          >
-                            Refused to connect? Klik Beralih ke Simulasi Feed
-                          </button>
-                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -4246,6 +4415,17 @@ export default function FluidHEDashboard() {
                         {!cctvAudioMuted ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
                         <span className="text-[11px]">{!cctvAudioMuted ? 'Suara ON' : 'Suara OFF'}</span>
                       </button>
+
+                      <a
+                        href="https://drive.google.com/drive/folders/1unHOfUZuYtNFLB2EMVwbPEa-THia2SIQ"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 transition text-zinc-200 text-xs font-medium gap-1 cursor-pointer"
+                        title="Buka Rekaman CCTV di Google Drive"
+                      >
+                        <Folder className="w-4 h-4 text-emerald-400" />
+                        <span className="text-[11px]">History</span>
+                      </a>
                     </div>
 
                     {!cctvAudioMuted && (
@@ -4380,7 +4560,7 @@ export default function FluidHEDashboard() {
                     </h3>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
+                  <div className="p-2.5 bg-zinc-800/60 rounded-xl border border-zinc-700/40">
                         <span className="text-zinc-400 text-[10.5px] block">TI1 (Hot In):</span>
                         <strong className="text-amber-400 font-mono text-sm">{latestData.ti1}°C</strong>
                       </div>
@@ -4403,246 +4583,12 @@ export default function FluidHEDashboard() {
 
               </div>
 
-              {/* Bottom Section: Media History Gallery */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <Camera className="w-4 h-4 text-sky-600" /> Galeri Media & Rekaman CCTV Lab
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Foto snapshot dan rekaman video tersimpan beserta data telemetri sensor suhu
-                    </p>
-                  </div>
 
-                  {/* Filter Tabs */}
-                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setActiveMediaTab('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeMediaTab === 'all'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                      Semua ({cctvMediaList.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMediaTab('snapshot')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'snapshot'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                      <Camera className="w-3.5 h-3.5 text-sky-600" /> Foto ({cctvMediaList.filter(m => m.type === 'snapshot').length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMediaTab('video')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${activeMediaTab === 'video'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                      <Film className="w-3.5 h-3.5 text-red-600" /> Video ({cctvMediaList.filter(m => m.type === 'video').length})
-                    </button>
-                  </div>
-                </div>
-
-                {/* Media Grid Cards */}
-                {cctvMediaList.length === 0 ? (
-                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-slate-400 text-xs">
-                    Belum ada foto snapshot atau rekaman video yang diambil. Klik tombol <strong>Snapshot</strong> atau <strong>Rekam Video</strong> di atas.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pt-1">
-                    {cctvMediaList
-                      .filter(item => activeMediaTab === 'all' ? true : item.type === activeMediaTab)
-                      .map((media) => (
-                        <div
-                          key={media.id}
-                          className="p-4 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition space-y-3 group"
-                        >
-                          <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
-                            {media.type === 'snapshot' && media.url ? (
-                              <img src={media.url} alt={media.title} className="w-full h-full object-cover" />
-                            ) : media.type === 'video' && media.url ? (
-                              <video src={media.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                            ) : (
-                              <div className="text-center p-2 text-slate-400">
-                                {media.type === 'snapshot' ? (
-                                  <Camera className="w-8 h-8 text-sky-400 mx-auto mb-1" />
-                                ) : (
-                                  <Film className="w-8 h-8 text-red-400 mx-auto mb-1" />
-                                )}
-                                <span className="text-[10px] font-mono font-bold text-slate-300 block">
-                                  {media.type === 'snapshot' ? 'SNAPSHOT FOTO' : `VIDEO (${media.metadata?.duration || '15s'})`}
-                                </span>
-                              </div>
-                            )}
-
-                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded-md text-[10px] font-bold text-white">
-                              {media.type === 'snapshot' ? '📸 FOTO' : '🎥 VIDEO'}
-                            </div>
-                          </div>
-
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{media.title}</h4>
-                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">{media.timestamp}</p>
-                          </div>
-
-                          {/* Watermark Telemetry Badges */}
-                          {media.metadata && (
-                            <div className="p-2 bg-white rounded-xl border border-slate-200/80 text-[10px] grid grid-cols-2 gap-1 font-mono text-slate-600">
-                              <div>TI1: <strong className="text-orange-600">{media.metadata.ti1}°C</strong></div>
-                              <div>TI2: <strong className="text-red-600">{media.metadata.ti2}°C</strong></div>
-                              <div>TI3: <strong className="text-cyan-600">{media.metadata.ti3}°C</strong></div>
-                              <div>FC1: <strong className="text-emerald-600">{media.metadata.flow} L/m</strong></div>
-                            </div>
-                          )}
-
-                          {/* Action Buttons */}
-                          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                            <button
-                              type="button"
-                              onClick={() => setPreviewMediaItem(media)}
-                              className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Lihat
-                            </button>
-                            <div className="flex items-center gap-1">
-                              {media.url && (
-                                <a
-                                  href={media.url}
-                                  download={media.type === 'snapshot'
-                                    ? `FluidHE_Snapshot_${media.id}.png`
-                                    : `FluidHE_Rekaman_${media.id}.webm`}
-                                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 p-1 hover:bg-emerald-50 rounded-lg transition"
-                                  title="Download"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteMediaItem(media.id)}
-                                className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 p-1 hover:bg-red-50 rounded-lg transition"
-                                title="Hapus Media"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Media Preview Modal */}
-              {previewMediaItem && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                      <div>
-                        <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                          {previewMediaItem.type === 'snapshot' ? <Camera className="w-5 h-5 text-sky-400" /> : <Film className="w-5 h-5 text-red-400" />}
-                          {previewMediaItem.title}
-                        </h3>
-                        <p className="text-xs text-slate-400 font-mono mt-0.5">{previewMediaItem.timestamp}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMediaItem(null)}
-                        className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <div className="aspect-video bg-black rounded-2xl border border-slate-800 flex items-center justify-center relative overflow-hidden">
-                      {previewMediaItem.type === 'snapshot' && previewMediaItem.url ? (
-                        <img src={previewMediaItem.url} alt="Snapshot" className="w-full h-full object-cover" />
-                      ) : previewMediaItem.type === 'video' && previewMediaItem.url ? (
-                        <video
-                          src={previewMediaItem.url}
-                          controls
-                          autoPlay
-                          className="w-full h-full object-contain rounded-2xl"
-                        />
-                      ) : (
-                        <div className="text-center p-6 space-y-2">
-                          <Video className="w-16 h-16 text-sky-400 mx-auto animate-pulse" />
-                          <p className="text-sm font-bold text-slate-200">Pratinjau Hasil Tangkapan Kamera CCTV Lab</p>
-                          <p className="text-xs text-slate-400 font-mono">Resolusi: 1920x1080 FHD • Lab HE Kampus IV UAD</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sensor Metadata Stamp Card */}
-                    {previewMediaItem.metadata && (
-                      <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 space-y-2">
-                        <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
-                          <Activity className="w-4 h-4" /> Telemetri Suhu & Debit Saat Tangkapan Diambil:
-                        </span>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
-                            <span className="text-slate-400 block text-[10px]">TI1 (Hot In)</span>
-                            <strong className="text-orange-400 text-sm">{previewMediaItem.metadata.ti1}°C</strong>
-                          </div>
-                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
-                            <span className="text-slate-400 block text-[10px]">TI2 (Hot Out)</span>
-                            <strong className="text-red-400 text-sm">{previewMediaItem.metadata.ti2}°C</strong>
-                          </div>
-                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
-                            <span className="text-slate-400 block text-[10px]">TI3 (Cold In)</span>
-                            <strong className="text-cyan-400 text-sm">{previewMediaItem.metadata.ti3}°C</strong>
-                          </div>
-                          <div className="p-2 bg-slate-900/90 rounded-xl border border-slate-700/60">
-                            <span className="text-slate-400 block text-[10px]">TI4 (Cold Out)</span>
-                            <strong className="text-cyan-400 text-sm">{previewMediaItem.metadata.ti4}°C</strong>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex justify-end gap-2 pt-2">
-                      {previewMediaItem.url && (
-                        <a
-                          href={previewMediaItem.url}
-                          download={previewMediaItem.type === 'snapshot'
-                            ? `FluidHE_Snapshot_${previewMediaItem.id}.png`
-                            : `FluidHE_Rekaman_${previewMediaItem.id}.webm`}
-                          className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                        >
-                          <Download className="w-4 h-4" /> Download {previewMediaItem.type === 'snapshot' ? 'PNG' : 'WebM'}
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerCctvToast('File CCTV tersimpan otomatis di Cloud Drive UAD.', 'info');
-                          setIsCloudDriveModalOpen(true);
-                        }}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                      >
-                        <CloudCheck className="w-4 h-4 text-emerald-200" /> Cloud Drive
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMediaItem(null)}
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
-                      >
-                        Tutup
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
             </div>
           )}
+
+
 
 
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "powershell -Command \"if (-not (Get-Process go2rtc -ErrorAction SilentlyContinue)) { Start-Process -FilePath .\\scripts\\go2rtc.exe -ArgumentList '-config .\\scripts\\go2rtc.yaml' -WindowStyle Hidden }\" && next dev -H 0.0.0.0 -p 3000",
+    "dev": "powershell -Command \"if (-not (Get-Process go2rtc -ErrorAction SilentlyContinue)) { Start-Process -FilePath .\\scripts\\go2rtc.exe -ArgumentList '-config .\\scripts\\go2rtc.yaml' -WindowStyle Hidden }\" && node --max-old-space-size=4096 node_modules/next/dist/bin/next dev -H 0.0.0.0 -p 3000",
     "dev:developer": "next dev -p 3001",
     "build": "next build",
     "cap:sync": "npx cap sync",

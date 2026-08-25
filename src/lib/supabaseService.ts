@@ -9,82 +9,74 @@ import {
 } from './supabase';
 
 /**
- * Mengambil data telemetri awal dari Supabase
+ * Mengambil data telemetri awal dari Supabase (via Server Proxy API)
  */
 export async function fetchLatestTelemetry(limit: number = 20): Promise<{ data: TelemetryRow[] | null; error: Error | null }> {
   try {
-    const { data, error } = await supabase
-      .from('telemetry_data')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const res = await fetch(`/api/supabase/telemetry?limit=${limit}`, { cache: 'no-store' });
+    const json = await res.json();
 
-    if (error) {
-      console.warn('[Supabase Warn] fetch telemetry_data status:', error.message);
-      return { data: null, error: new Error(error.message) };
+    if (!res.ok || json.error) {
+      const errMsg = json.error || 'Failed to fetch telemetry';
+      console.warn('[Supabase API Warn] fetch telemetry_data status:', errMsg);
+      return { data: null, error: new Error(errMsg) };
     }
 
-    const sortedData = (data as TelemetryRow[] || []).reverse();
-    return { data: sortedData, error: null };
+    return { data: json.data as TelemetryRow[], error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error during fetchLatestTelemetry';
-    console.warn('[Supabase Exception] fetchLatestTelemetry:', errorMsg);
+    console.warn('[Supabase API Exception] fetchLatestTelemetry:', errorMsg);
     return { data: null, error: new Error(errorMsg) };
   }
 }
 
 /**
- * Mengambil status kontrol perangkat saat ini (Row ID = 1)
+ * Mengambil status kontrol perangkat saat ini (Row ID = 1 via Server Proxy API)
  */
 export async function fetchDeviceControls(): Promise<{ data: DeviceControlsRow | null; error: Error | null }> {
   try {
-    const { data, error } = await supabase
-      .from('device_controls')
-      .select('*')
-      .eq('id', 1)
-      .single();
+    const res = await fetch('/api/supabase/controls', { cache: 'no-store' });
+    const json = await res.json();
 
-    if (error) {
-      console.warn('[Supabase Warn] fetch device_controls status:', error.message);
-      return { data: null, error: new Error(error.message) };
+    if (!res.ok || json.error) {
+      const errMsg = json.error || 'Failed to fetch device_controls';
+      console.warn('[Supabase API Warn] fetch device_controls status:', errMsg);
+      return { data: null, error: new Error(errMsg) };
     }
 
-    return { data: data as DeviceControlsRow, error: null };
+    return { data: json.data as DeviceControlsRow, error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error during fetchDeviceControls';
-    console.warn('[Supabase Exception] fetchDeviceControls:', errorMsg);
+    console.warn('[Supabase API Exception] fetchDeviceControls:', errorMsg);
     return { data: null, error: new Error(errorMsg) };
   }
 }
 
 /**
- * Menulis / Meng-update Perintah Kontrol ke tabel device_controls (row id = 1)
+ * Menulis / Meng-update Perintah Kontrol ke tabel device_controls (row id = 1 via Server Proxy API)
  */
 export async function updateDeviceControls(
   updates: Partial<Omit<DeviceControlsRow, 'id'>>
 ): Promise<{ success: boolean; data: DeviceControlsRow | null; error: string | null }> {
   try {
-    const payload = {
-      ...updates,
-      updated_at: new Date().toISOString()
-    };
+    const res = await fetch('/api/supabase/controls', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
 
-    const { data, error } = await supabase
-      .from('device_controls')
-      .update(payload)
-      .eq('id', 1)
-      .select('*')
-      .single();
+    const json = await res.json();
 
-    if (error) {
-      console.warn('[Supabase Control Update Warn]:', error.message);
-      return { success: false, data: null, error: error.message };
+    if (!res.ok || !json.success) {
+      const errMsg = json.error || 'Failed to update device_controls';
+      console.warn('[Supabase API Control Update Warn]:', errMsg);
+      return { success: false, data: null, error: errMsg };
     }
 
-    return { success: true, data: data as DeviceControlsRow, error: null };
+    return { success: true, data: json.data as DeviceControlsRow, error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Koneksi gagal saat memperbarui perintah kontrol';
-    console.warn('[Supabase Control Exception]:', errorMsg);
+    console.warn('[Supabase API Control Exception]:', errorMsg);
     return { success: false, data: null, error: errorMsg };
   }
 }
@@ -118,6 +110,36 @@ export const supabaseControlService = {
   setServoAngle: async (servoAngle: number) => {
     const parsedInt = Math.min(90, Math.max(0, Math.round(servoAngle)));
     return updateDeviceControls({ servo_angle: parsedInt });
+  },
+
+  // 6. Slider/Input Target Flow (0.0 - 10.0 L/min, float)
+  setTargetFlow: async (targetFlow: number) => {
+    const parsedFloat = parseFloat(Math.min(10.0, Math.max(0.0, targetFlow)).toFixed(1));
+    return updateDeviceControls({ target_flow: parsedFloat });
+  },
+
+  // 7. Toggle Katup Uap (boolean true / false)
+  setUapStatus: async (uapStatus: boolean) => {
+    return updateDeviceControls({ uap_status: uapStatus });
+  },
+
+  // 8. Toggle Katup Air Dingin (boolean true / false)
+  setAirDinginStatus: async (airDinginStatus: boolean) => {
+    return updateDeviceControls({ air_dingin: airDinginStatus });
+  },
+
+  // 9. Momentary Servo Buttons (Edge Detection: true -> wait 1500ms -> false)
+  triggerMomentaryButton: async (btnName: 'btn_up' | 'btn_onoff' | 'btn_down') => {
+    try {
+      const startRes = await updateDeviceControls({ [btnName]: true });
+      if (!startRes.success) return startRes;
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    } catch (err) {
+      console.warn(`Momentary button pulse start notice (${btnName}):`, err);
+    } finally {
+      return await updateDeviceControls({ [btnName]: false });
+    }
   }
 };
 
@@ -136,7 +158,18 @@ export function useSupabaseIntegration() {
     control_mode: 'MANUAL',
     heater_status: true,
     target_temp: 50.0,
-    servo_angle: 45
+    target_flow: 5.0,
+    servo_angle: 45,
+    uap_status: false,
+    air_dingin: false,
+    btn_up: false,
+    btn_onoff: false,
+    btn_down: false
+  });
+  const [activeMomentaryButtons, setActiveMomentaryButtons] = useState<{ btn_up: boolean; btn_onoff: boolean; btn_down: boolean }>({
+    btn_up: false,
+    btn_onoff: false,
+    btn_down: false
   });
   const [isUpdatingControl, setIsUpdatingControl] = useState<boolean>(false);
 
@@ -311,6 +344,64 @@ export function useSupabaseIntegration() {
     return result;
   };
 
+  const handleTargetFlowChange = async (targetFlow: number) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, target_flow: targetFlow }));
+    const result = await supabaseControlService.setTargetFlow(targetFlow);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update target_flow: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleUapStatusToggle = async (uapStatus: boolean) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, uap_status: uapStatus }));
+    const result = await supabaseControlService.setUapStatus(uapStatus);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update uap_status: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleAirDinginToggle = async (airDinginStatus: boolean) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, air_dingin: airDinginStatus }));
+    const result = await supabaseControlService.setAirDinginStatus(airDinginStatus);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update air_dingin: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleMomentaryButtonPress = async (btnName: 'btn_up' | 'btn_onoff' | 'btn_down') => {
+    setIsUpdatingControl(true);
+    setActiveMomentaryButtons((prev) => ({ ...prev, [btnName]: true }));
+    setDeviceControls((prev) => ({ ...prev, [btnName]: true }));
+
+    const result = await supabaseControlService.triggerMomentaryButton(btnName);
+    
+    setActiveMomentaryButtons((prev) => ({ ...prev, [btnName]: false }));
+    setDeviceControls((prev) => ({ ...prev, [btnName]: false }));
+    setIsUpdatingControl(false);
+
+    if (!result.success) {
+      setErrorMessage(`Gagal memicu tombol servo ${btnName}: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
   return {
     connectionStatus,
     errorMessage,
@@ -319,12 +410,17 @@ export function useSupabaseIntegration() {
     latestTelemetry,
     telemetryStream,
     deviceControls,
+    activeMomentaryButtons,
     isUpdatingControl,
     initializeData,
     handleFlowModeChange,
     handleControlModeChange,
     handleHeaterPowerToggle,
     handleTargetTempChange,
-    handleServoAngleChange
+    handleServoAngleChange,
+    handleTargetFlowChange,
+    handleUapStatusToggle,
+    handleAirDinginToggle,
+    handleMomentaryButtonPress
   };
 }
