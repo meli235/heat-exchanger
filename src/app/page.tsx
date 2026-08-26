@@ -381,7 +381,17 @@ export default function FluidHEDashboard() {
 
   useEffect(() => {
     fetchUsersFromServer();
+    const uInterval = setInterval(() => {
+      fetchUsersFromServer();
+    }, 4000);
+    return () => clearInterval(uInterval);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsersFromServer();
+    }
+  }, [activeTab]);
 
   // Single Active Session Lock & Heartbeat Synchronization Effect
   useEffect(() => {
@@ -1617,6 +1627,29 @@ export default function FluidHEDashboard() {
       }
     }
 
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const lastLoginText = `Hari ini, ${timeStr}`;
+
+    // Update lastLogin locally and to central server database
+    setUsersList((prev) =>
+      prev.map((u) => (u.email.toLowerCase() === email ? { ...u, lastLogin: lastLoginText } : u))
+    );
+
+    try {
+      const patchRes = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, lastLogin: lastLoginText })
+      });
+      const patchData = await patchRes.json();
+      if (patchData.success && Array.isArray(patchData.users)) {
+        setUsersList(patchData.users);
+      }
+    } catch (e) {
+      console.error('Failed to update lastLogin on server', e);
+    }
+
     if (found) {
       setCurrentUser({
         name: found.name,
@@ -1626,15 +1659,15 @@ export default function FluidHEDashboard() {
       if (found.role === 'operator') {
         setOperatorSessionRemaining(operatorSessionLimit * 60);
       }
-    } else if (selectedDemoRole === 'admin' || email === 'admin@uad.ac.id') {
+    } else if (selectedDemoRole === 'admin' || email === 'admin@uad.ac.id' || email === 'anugrahtriplecycle@gmail.com') {
       setCurrentUser({
-        name: 'Admin Lab (Anugrah Triple Cycle)',
+        name: 'Admin Lab (Anugrah)',
         email: email,
         role: 'admin'
       });
     } else {
       setCurrentUser({
-        name: 'Dwi Melianti (Mahasiswa Operator)',
+        name: 'Operator Lab',
         email: email,
         role: 'operator'
       });

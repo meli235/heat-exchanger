@@ -2,16 +2,27 @@
   "users": [
     {
       "id": "USR-01",
-      "name": "Admin Lab (Anugrah)",
+      "name": "Admin",
       "email": "anugrahtriplecycle@gmail.com",
       "role": "admin",
       "status": "Active",
-      "lastLogin": "Hari ini, 14:15",
-      "isScheduleRestricted": false
+      "lastLogin": "Belum Pernah",
+      "isScheduleRestricted": true,
+      "allowedStartDate": "2026-08-26",
+      "allowedEndDate": "2026-08-26",
+      "allowedDays": [
+        "Senin",
+        "Selasa",
+        "Rabu",
+        "Kamis",
+        "Jumat"
+      ],
+      "allowedStartTime": "07:00",
+      "allowedEndTime": "18:00"
     },
     {
       "id": "USR-02",
-      "name": "meli",
+      "name": "caca",
       "email": "dwimeliantiistiqomah55@gmail.com",
       "role": "operator",
       "status": "Active",
@@ -31,8 +42,8 @@
     }
   ],
   "passwords": {
-    "anugrahtriplecycle@gmail.com": "admin123",
-    "dwimeliantiistiqomah55@gmail.com": "dLu5ewvB",
-    "admin@uad.ac.id": "admin123"
+    "dwimeliantiistiqomah55@gmail.com": "GVwbSTbs",
+    "admin@uad.ac.id": "admin123",
+    "anugrahtriplecycle@gmail.com": "gsxjGzxe"
   }
 }
