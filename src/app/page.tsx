@@ -373,17 +373,7 @@ export default function FluidHEDashboard() {
       if (savedUsers) {
         const parsedUsers = JSON.parse(savedUsers);
         if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
-          // Bersihkan akun legacy yang sudah dihapus
-          const cleanedUsers = parsedUsers.filter((u: UserItem) => {
-            const em = (u.email || '').toLowerCase();
-            return !em.includes('itenas') && !em.includes('dwimelianti') && !em.includes('winkyy') && !em.includes('anugrahtriplecycle') && em !== 'operator@uad.ac.id';
-          });
-          if (cleanedUsers.length > 0) {
-            setUsersList(cleanedUsers);
-            localStorage.setItem('fluidhe_user_accounts', JSON.stringify(cleanedUsers));
-          } else {
-            localStorage.removeItem('fluidhe_user_accounts');
-          }
+          setUsersList(parsedUsers);
         }
       }
     } catch (e) {
