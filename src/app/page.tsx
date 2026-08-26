@@ -948,8 +948,29 @@ export default function FluidHEDashboard() {
       return;
     }
 
-    // Security Check: Whitelist verification (User must be registered in usersList or system accounts)
-    const isRegisteredUser = usersList.some(u => u.email.toLowerCase() === email) ||
+    let activeUsersList = usersList;
+    let activePasswords = userPasswords;
+    try {
+      const savedUsers = localStorage.getItem('fluidhe_user_accounts');
+      if (savedUsers) {
+        const parsed = JSON.parse(savedUsers);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          activeUsersList = parsed;
+        }
+      }
+      const savedPass = localStorage.getItem('fluidhe_user_passwords');
+      if (savedPass) {
+        activePasswords = { ...DEFAULT_PASSWORDS, ...JSON.parse(savedPass) };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Security Check: Whitelist verification (User must be registered in usersList, stored passwords, or system accounts)
+    const isRegisteredUser =
+      activeUsersList.some((u) => u.email.toLowerCase() === email) ||
+      usersList.some((u) => u.email.toLowerCase() === email) ||
+      Boolean(activePasswords[email]) ||
       email === 'admin@uad.ac.id' ||
       email === 'operator@uad.ac.id' ||
       email === 'dev@uad.ac.id';
