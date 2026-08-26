@@ -418,6 +418,19 @@ export default function FluidHEDashboard() {
     const interval = setInterval(() => {
       checkActiveSession();
       if (isLoggedIn && currentUser) {
+        // Real-time schedule enforcement: If admin changed schedule while operator is active
+        if (currentUser.role === 'operator') {
+          const freshUser = usersList.find((u) => u.email.toLowerCase() === currentUser.email.toLowerCase());
+          if (freshUser) {
+            const check = validateScheduleAccess(freshUser);
+            if (!check.allowed) {
+              alert(`⛔ AKSES DITUTUP OLEH ADMIN: ${check.reason}`);
+              handleLogout();
+              return;
+            }
+          }
+        }
+
         const mySession = {
           email: currentUser.email,
           name: currentUser.name,
@@ -428,12 +441,12 @@ export default function FluidHEDashboard() {
         localStorage.setItem('fluidhe_active_session', JSON.stringify(mySession));
         setActiveSession(mySession);
       }
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, [isLoggedIn, currentUser]);
+  }, [isLoggedIn, currentUser, usersList]);
 
-  // Schedule Access Validation Helper Function (Validation for Exact Single Date & Time)
+  // Schedule Access Validation Helper Function (Validation for Date Range, Days of Week, & Operational Hours)
   const validateScheduleAccess = (user: UserItem): { allowed: boolean; reason?: string } => {
     if (!user.isScheduleRestricted || user.role === 'admin') {
       return { allowed: true };
@@ -444,13 +457,29 @@ export default function FluidHEDashboard() {
 
     // 1. Validasi Rentang Tanggal (Date Range Check)
     if (user.allowedStartDate && todayStr < user.allowedStartDate) {
-      return { allowed: false, reason: `Masa izin praktikum Anda belum dimulai. (Mulai: ${user.allowedStartDate})` };
+      return { allowed: false, reason: `Masa izin praktikum Anda belum dimulai. (Tanggal Mulai: ${user.allowedStartDate})` };
     }
     if (user.allowedEndDate && todayStr > user.allowedEndDate) {
       return { allowed: false, reason: `Masa izin praktikum Anda telah berakhir pada ${user.allowedEndDate}.` };
     }
 
-    // 2. Validasi Jam Operasional Check
+    // 2. Validasi Hari Akses (Day of Week Check: Minggu, Senin, Selasa, Rabu, Kamis, Jumat, Sabtu)
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const currentDayName = dayNames[now.getDay()];
+
+    if (user.allowedDays && Array.isArray(user.allowedDays) && user.allowedDays.length > 0) {
+      const isAllowedDay = user.allowedDays.some(
+        (d) => d.toLowerCase().trim() === currentDayName.toLowerCase().trim()
+      );
+      if (!isAllowedDay) {
+        return {
+          allowed: false,
+          reason: `Hari ini (${currentDayName}) Anda tidak memiliki izin akses praktikum. Hari yang diizinkan Admin: ${user.allowedDays.join(', ')}.`
+        };
+      }
+    }
+
+    // 3. Validasi Jam Operasional (Operational Hours Check)
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const [startH, startM] = (user.allowedStartTime || '07:00').split(':').map(Number);
@@ -462,7 +491,7 @@ export default function FluidHEDashboard() {
     if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
       return {
         allowed: false,
-        reason: `AKSES DITOLAK (DILUAR JAM OPERASIONAL): Saat ini (${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB) berada di luar jam operasional praktikum. Jam yang diizinkan Admin: ${user.allowedStartTime || '07:00'} s.d. ${user.allowedEndTime || '18:00'} WIB.`
+        reason: `Saat ini (${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB) berada di luar jam operasional praktikum. Jam yang diizinkan Admin: ${user.allowedStartTime || '07:00'} s.d. ${user.allowedEndTime || '18:00'} WIB.`
       };
     }
 
