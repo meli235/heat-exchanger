@@ -6,7 +6,7 @@
       "email": "anugrahtriplecycle@gmail.com",
       "role": "admin",
       "status": "Active",
-      "lastLogin": "Belum Pernah",
+      "lastLogin": "Hari ini, 16.08",
       "isScheduleRestricted": true,
       "allowedStartDate": "2026-08-26",
       "allowedEndDate": "2026-08-26",
@@ -26,13 +26,13 @@
       "email": "dwimeliantiistiqomah55@gmail.com",
       "role": "operator",
       "status": "Active",
-      "lastLogin": "Hari ini, 16.00",
+      "lastLogin": "Hari ini, 16.09",
       "isScheduleRestricted": true,
       "allowedStartDate": "2026-08-26",
       "allowedEndDate": "2026-08-26",
       "allowedDays": [
         "Minggu",
-        "Rabu"
+        "Kamis"
       ],
       "allowedStartTime": "07:00",
       "allowedEndTime": "18:00"
