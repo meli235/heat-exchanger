@@ -45,6 +45,15 @@ export interface CctvTabProps {
   handlePtzPreset: (label: string, presetKey: string) => void;
   ptzMoving: string | null;
   latestData: TelemetryPoint;
+
+  // === AUTO-UPLOAD PROPS ===
+  autoUploadStatus: 'idle' | 'capturing' | 'uploading' | 'success' | 'error' | 'disabled';
+  lastAutoUploadTime: string | null;
+  autoUploadQueueLength: number;
+  autoUploadIsEnabled: boolean;
+  onToggleAutoUpload: () => void;
+  onForceUploadNow: () => void;
+  autoUploadLogs: Array<{ time: string; status: 'success' | 'error'; message: string; url?: string }>;
 }
 
 export const CctvTab: React.FC<CctvTabProps> = ({
@@ -74,7 +83,14 @@ export const CctvTab: React.FC<CctvTabProps> = ({
   handlePtzAction,
   handlePtzPreset,
   ptzMoving,
-  latestData
+  latestData,
+  autoUploadStatus,
+  lastAutoUploadTime,
+  autoUploadQueueLength,
+  autoUploadIsEnabled,
+  onToggleAutoUpload,
+  onForceUploadNow,
+  autoUploadLogs
 }) => {
   return (
     <div className="space-y-6">
@@ -318,6 +334,99 @@ export const CctvTab: React.FC<CctvTabProps> = ({
             </div>
 
           </div>
+
+          {/* Auto Upload Status Bar */}
+          <div className="flex items-center justify-between bg-zinc-900/80 backdrop-blur-sm px-3 py-2.5 rounded-xl border border-zinc-800 text-xs mt-2">
+            <div className="flex items-center gap-2.5">
+              {/* Status Dot */}
+              <span className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-300 ${
+                autoUploadStatus === 'uploading' || autoUploadStatus === 'capturing'
+                  ? 'bg-amber-400 animate-ping'
+                  : autoUploadStatus === 'success'
+                  ? 'bg-emerald-400'
+                  : autoUploadStatus === 'error'
+                  ? 'bg-red-400'
+                  : autoUploadStatus === 'disabled'
+                  ? 'bg-zinc-600'
+                  : 'bg-zinc-500'
+              }`} />
+
+              {/* Status Text */}
+              <span className="text-zinc-300 font-medium">
+                {autoUploadStatus === 'capturing' ? '🔴 Mengambil frame CCTV...' :
+                 autoUploadStatus === 'uploading' ? '⏳ Mengunggah ke Google Drive...' :
+                 autoUploadStatus === 'success' ? '✅ Auto-upload sukses' :
+                 autoUploadStatus === 'error' ? '❌ Auto-upload gagal (queued)' :
+                 autoUploadStatus === 'disabled' ? '⏸️ Auto-upload: OFF' :
+                 '⏸️ Auto-upload: idle (5 menit)'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Queue Badge */}
+              {autoUploadQueueLength > 0 && (
+                <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[10px] font-mono">
+                  Queue: {autoUploadQueueLength}
+                </span>
+              )}
+
+              {/* Last Upload Time */}
+              <span className="text-zinc-500 text-[10px] font-mono">
+                {lastAutoUploadTime ? `Terakhir: ${lastAutoUploadTime}` : 'Belum pernah upload'}
+              </span>
+            </div>
+          </div>
+
+          {/* Auto Upload Controls */}
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={onToggleAutoUpload}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                autoUploadIsEnabled
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+              }`}
+            >
+              <span>{autoUploadIsEnabled ? '⏸️' : '▶️'}</span>
+              {autoUploadIsEnabled ? 'Pause Auto-Upload' : 'Start Auto-Upload'}
+            </button>
+
+            <button
+              type="button"
+              onClick={onForceUploadNow}
+              disabled={!autoUploadIsEnabled || autoUploadStatus === 'uploading' || autoUploadStatus === 'capturing'}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 border border-sky-500/30 hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <span>📸</span>
+              Upload Sekarang
+            </button>
+          </div>
+
+          {/* Auto Upload Logs (Collapsible) */}
+          {autoUploadLogs && autoUploadLogs.length > 0 && (
+            <div className="mt-2 bg-zinc-900/50 rounded-xl border border-zinc-800 overflow-hidden">
+              <div className="px-3 py-1.5 bg-zinc-800/50 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                Log Auto-Upload ({autoUploadLogs.length})
+              </div>
+              <div className="max-h-24 overflow-y-auto p-2 space-y-1">
+                {autoUploadLogs.slice(0, 10).map((log, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[10px]">
+                    <span className="text-zinc-500 font-mono shrink-0">{log.time}</span>
+                    <span className={log.status === 'success' ? 'text-emerald-400' : 'text-red-400'}>
+                      {log.status === 'success' ? '✓' : '✗'}
+                    </span>
+                    <span className="text-zinc-300 truncate">{log.message}</span>
+                    {log.url && (
+                      <a href={log.url} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline shrink-0">
+                        [Lihat]
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Quick Action Bar */}
           <div className="p-4 bg-zinc-900 text-white rounded-2xl border border-zinc-800 space-y-3">

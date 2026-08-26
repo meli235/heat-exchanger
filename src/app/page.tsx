@@ -96,6 +96,7 @@ import {
 } from '@/components/control';
 import { LoginScreen } from '@/components/auth';
 import { CctvTab } from '@/components/cctv';
+import { useCctvAutoUpload } from '@/hooks/useCctvAutoUpload';
 import { LogsTab } from '@/components/logs';
 import { AlarmsTab } from '@/components/alarms';
 import { UsersTab } from '@/components/users';
@@ -1121,6 +1122,27 @@ export default function FluidHEDashboard() {
     setCctvToast({ message, type });
     setTimeout(() => setCctvToast(null), 3500);
   };
+
+  // ─── CCTV AUTO UPLOAD HOOK ───
+  const {
+    status: autoUploadStatus,
+    lastUploadTime,
+    queueLength,
+    logs: autoUploadLogs,
+    isEnabled: autoUploadIsEnabled,
+    toggleAutoUpload,
+    forceUploadNow,
+  } = useCctvAutoUpload({
+    videoRef,
+    webrtcConnected,
+    latestData,
+    triggerToast: triggerCctvToast,
+    intervalMs: 30000,       // 30 detik (untuk mode test cepat)
+    queueIntervalMs: 120000, // 2 menit
+    maxRetries: 3,
+    uploadTimeoutMs: 30000,
+    enabled: true,
+  });
 
   const handlePtzAction = async (action: string) => {
     setPtzMoving(action);
@@ -2914,6 +2936,13 @@ export default function FluidHEDashboard() {
               handlePtzPreset={handlePtzPreset}
               ptzMoving={ptzMoving}
               latestData={latestData}
+              autoUploadStatus={autoUploadStatus}
+              lastAutoUploadTime={lastUploadTime}
+              autoUploadQueueLength={queueLength}
+              autoUploadIsEnabled={autoUploadIsEnabled}
+              onToggleAutoUpload={toggleAutoUpload}
+              onForceUploadNow={forceUploadNow}
+              autoUploadLogs={autoUploadLogs}
             />
           )}
 

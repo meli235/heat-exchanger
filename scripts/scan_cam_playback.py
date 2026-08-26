@@ -2,7 +2,7 @@ import subprocess
 import datetime
 
 ffmpeg_path = r"C:\Users\mrwin\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-essentials_build\bin\ffmpeg.exe"
-cam_ip = "192.168.1.12"
+cam_ip = "192.168.101.7"
 cam_pass = "TJPCYS"
 
 now = datetime.datetime.now(datetime.timezone.utc)
