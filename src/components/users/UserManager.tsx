@@ -223,18 +223,6 @@ export const UserManager: React.FC<UserManagerProps> = ({
                 <td className="p-3">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
-                      disabled={resendingEmailFor === u.id}
-                      onClick={() => handleResendUserCredentials(u)}
-                      className="p-1 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-slate-100 transition disabled:opacity-50"
-                      title="Kirim / Resend Kredensial & Sandi ke Email User"
-                    >
-                      {resendingEmailFor === u.id ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                      ) : (
-                        <Mail className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <button
                       onClick={() => onOpenResetPasswordModal(u.email)}
                       className="p-1 text-slate-400 hover:text-amber-600 rounded-lg hover:bg-slate-100 transition"
                       title="Reset / Ganti Kata Sandi (Verifikasi OTP)"
@@ -242,14 +230,22 @@ export const UserManager: React.FC<UserManagerProps> = ({
                       <Key className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         const nextRole: UserRole = u.role === 'operator' ? 'admin' : 'operator';
-                        const updated = usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x));
-                        setUsersList(updated);
                         try {
-                          localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updated));
+                          const res = await fetch('/api/users', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: u.id, email: u.email, newRole: nextRole })
+                          });
+                          const data = await res.json();
+                          if (data.success && Array.isArray(data.users)) {
+                            setUsersList(data.users);
+                          } else {
+                            setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
+                          }
                         } catch (e) {
-                          console.error(e);
+                          setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
                         }
                       }}
                       className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition"
@@ -304,20 +300,19 @@ export const UserManager: React.FC<UserManagerProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const updated = usersList.filter((x) => x.id !== userToDelete.id);
-                  setUsersList(updated);
+                onClick={async () => {
                   try {
-                    localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updated));
-                    const savedPass = localStorage.getItem('fluidhe_user_passwords');
-                    if (savedPass) {
-                      const parsedPass = JSON.parse(savedPass);
-                      delete parsedPass[userToDelete.email.toLowerCase()];
-                      delete parsedPass[userToDelete.email];
-                      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(parsedPass));
+                    const res = await fetch(`/api/users?id=${encodeURIComponent(userToDelete.id)}&email=${encodeURIComponent(userToDelete.email)}`, {
+                      method: 'DELETE'
+                    });
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.users)) {
+                      setUsersList(data.users);
+                    } else {
+                      setUsersList(usersList.filter((x) => x.id !== userToDelete.id));
                     }
                   } catch (e) {
-                    console.error(e);
+                    setUsersList(usersList.filter((x) => x.id !== userToDelete.id));
                   }
                   setUserToDelete(null);
                 }}

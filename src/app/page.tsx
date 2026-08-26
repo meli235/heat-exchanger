@@ -341,6 +341,7 @@ export default function FluidHEDashboard() {
   // ─── AUTH & SECURE EMAIL OTP PASSWORD RESET STATES ───
   const DEFAULT_PASSWORDS: Record<string, string> = {
     'admin@uad.ac.id': 'admin123',
+    'anugrahtriplecycle@gmail.com': 'admin123',
     'operator@uad.ac.id': 'operator123',
     'dev@uad.ac.id': 'dev123'
   };
@@ -362,23 +363,24 @@ export default function FluidHEDashboard() {
   const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
   const [smtpStatusInfo, setSmtpStatusInfo] = useState<string | null>(null);
 
-  // Load saved passwords and user accounts from localStorage
-  useEffect(() => {
+  // Load user accounts & passwords from Central Server API (/api/users)
+  const fetchUsersFromServer = async () => {
     try {
-      const savedPass = localStorage.getItem('fluidhe_user_passwords');
-      if (savedPass) {
-        setUserPasswords((prev) => ({ ...DEFAULT_PASSWORDS, ...prev, ...JSON.parse(savedPass) }));
-      }
-      const savedUsers = localStorage.getItem('fluidhe_user_accounts');
-      if (savedUsers) {
-        const parsedUsers = JSON.parse(savedUsers);
-        if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
-          setUsersList(parsedUsers);
+      const res = await fetch('/api/users', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        setUsersList(data.users);
+        if (data.passwords) {
+          setUserPasswords((prev) => ({ ...prev, ...data.passwords }));
         }
       }
     } catch (e) {
-      console.error('Failed to load user credentials from storage', e);
+      console.error('Failed to load user credentials from server API', e);
     }
+  };
+
+  useEffect(() => {
+    fetchUsersFromServer();
   }, []);
 
   // Single Active Session Lock & Heartbeat Synchronization Effect
@@ -501,11 +503,32 @@ export default function FluidHEDashboard() {
     const updatedPasswords = { ...userPasswords, [email]: randomPassword };
     setUserPasswords(updatedPasswords);
 
+    // Save to Central Server API
     try {
-      localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updatedUsers));
-      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(updatedPasswords));
+      const apiRes = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newUserName.trim(),
+          email: email,
+          role: newUserRole,
+          password: randomPassword,
+          isScheduleRestricted: newUserRole === 'operator' ? newUserRestricted : false,
+          allowedStartDate: newUserStartDate || todayStr,
+          allowedEndDate: newUserEndDate || todayStr,
+          allowedStartTime: newUserStartTime || '07:00',
+          allowedEndTime: newUserEndTime || '18:00'
+        })
+      });
+      const apiData = await apiRes.json();
+      if (apiData.success && Array.isArray(apiData.users)) {
+        setUsersList(apiData.users);
+        if (apiData.passwords) {
+          setUserPasswords((prev) => ({ ...prev, ...apiData.passwords }));
+        }
+      }
     } catch (err) {
-      console.error('Failed to save to localStorage', err);
+      console.error('Failed to save user to server API', err);
     }
 
     setLastCreatedUserCredentials({
@@ -948,19 +971,19 @@ export default function FluidHEDashboard() {
       return;
     }
 
+    // Always fetch latest server users from central API first
     let activeUsersList = usersList;
     let activePasswords = userPasswords;
     try {
-      const savedUsers = localStorage.getItem('fluidhe_user_accounts');
-      if (savedUsers) {
-        const parsed = JSON.parse(savedUsers);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          activeUsersList = parsed;
+      const uRes = await fetch('/api/users', { cache: 'no-store' });
+      const uData = await uRes.json();
+      if (uData.success && Array.isArray(uData.users)) {
+        activeUsersList = uData.users;
+        setUsersList(uData.users);
+        if (uData.passwords) {
+          activePasswords = { ...DEFAULT_PASSWORDS, ...uData.passwords };
+          setUserPasswords(activePasswords);
         }
-      }
-      const savedPass = localStorage.getItem('fluidhe_user_passwords');
-      if (savedPass) {
-        activePasswords = { ...DEFAULT_PASSWORDS, ...JSON.parse(savedPass) };
       }
     } catch (e) {
       console.error(e);
@@ -972,6 +995,7 @@ export default function FluidHEDashboard() {
       usersList.some((u) => u.email.toLowerCase() === email) ||
       Boolean(activePasswords[email]) ||
       email === 'admin@uad.ac.id' ||
+      email === 'anugrahtriplecycle@gmail.com' ||
       email === 'operator@uad.ac.id' ||
       email === 'dev@uad.ac.id';
 
@@ -1470,7 +1494,7 @@ export default function FluidHEDashboard() {
     };
   };
 
-  const handleSaveNewPassword = (e?: React.SyntheticEvent) => {
+  const handleSaveNewPassword = async (e?: React.SyntheticEvent) => {
     if (e) e.preventDefault();
     setResetError(null);
 
@@ -1501,10 +1525,16 @@ export default function FluidHEDashboard() {
     const email = resetEmailInput.toLowerCase().trim();
     const updated = { ...userPasswords, [email]: newPasswordInput.trim() };
     setUserPasswords(updated);
+
+    // Save updated password to central server API
     try {
-      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(updated));
+      await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, newPassword: newPasswordInput.trim() })
+      });
     } catch (err) {
-      console.error('Failed to save to localStorage', err);
+      console.error('Failed to save new password to server API', err);
     }
 
     // Auto-fill login form with new credentials
@@ -1514,7 +1544,7 @@ export default function FluidHEDashboard() {
   };
 
   // ─── LOGIN HANDLER (WITH STRICT PASSWORD VALIDATION & PERSISTENCE) ───
-  const handleLogin = (e?: React.SyntheticEvent) => {
+  const handleLogin = async (e?: React.SyntheticEvent) => {
     if (e) e.preventDefault();
     setLoginError(null);
 
@@ -1533,21 +1563,16 @@ export default function FluidHEDashboard() {
     let activePasswords: Record<string, string> = { ...DEFAULT_PASSWORDS, ...userPasswords };
     let activeUsers: UserItem[] = usersList;
     try {
-      if (typeof window !== 'undefined') {
-        const storedPass = localStorage.getItem('fluidhe_user_passwords');
-        if (storedPass) {
-          activePasswords = { ...DEFAULT_PASSWORDS, ...activePasswords, ...JSON.parse(storedPass) };
-        }
-        const storedUsers = localStorage.getItem('fluidhe_user_accounts');
-        if (storedUsers) {
-          const parsedUsers = JSON.parse(storedUsers);
-          if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
-            activeUsers = parsedUsers;
-          }
+      const uRes = await fetch('/api/users', { cache: 'no-store' });
+      const uData = await uRes.json();
+      if (uData.success && Array.isArray(uData.users)) {
+        activeUsers = uData.users;
+        if (uData.passwords) {
+          activePasswords = { ...DEFAULT_PASSWORDS, ...uData.passwords };
         }
       }
     } catch (err) {
-      console.error('Storage parse error:', err);
+      console.error('Fetch users error on login:', err);
     }
 
     const found = activeUsers.find(u => u.email.toLowerCase() === email) || usersList.find(u => u.email.toLowerCase() === email);
