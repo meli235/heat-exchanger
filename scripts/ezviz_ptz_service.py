@@ -21,7 +21,7 @@ def get_client(account, password, mfa_code=None):
     client = EzvizClient(account=account, password=password, url=REGION_URL, token=token)
     return client
 
-def do_login(account="dwimeliantiistiqomah55@gmail.com", password="Melchan5.", mfa_code=None):
+def do_login(account="anugrahtriplecycle@gmail.com", password="Melchan5.", mfa_code=None):
     try:
         client = EzvizClient(account=account, password=password, url=REGION_URL)
         if mfa_code:
@@ -61,7 +61,7 @@ def do_move(direction, duration=0.6):
 
     if not client:
         # Fallback to auto-login using default credentials
-        client = EzvizClient(account="dwimeliantiistiqomah55@gmail.com", password="Melchan5.", url=REGION_URL)
+        client = EzvizClient(account="anugrahtriplecycle@gmail.com", password="Melchan5.", url=REGION_URL)
         try:
             res = client.login()
             with open(SESSION_FILE, 'w') as f:
@@ -97,7 +97,7 @@ def do_move(direction, duration=0.6):
     except Exception as e:
         # If token expired during ptz_control, attempt 1 auto-login retry
         try:
-            c_retry = EzvizClient(account="dwimeliantiistiqomah55@gmail.com", password="Melchan5.", url=REGION_URL)
+            c_retry = EzvizClient(account="anugrahtriplecycle@gmail.com", password="Melchan5.", url=REGION_URL)
             res_retry = c_retry.login()
             with open(SESSION_FILE, 'w') as f:
                 json.dump(res_retry, f)
@@ -117,12 +117,12 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1]
     if cmd == "login":
-        acc = sys.argv[2] if len(sys.argv) > 2 else "dwimeliantiistiqomah55@gmail.com"
+        acc = sys.argv[2] if len(sys.argv) > 2 else "anugrahtriplecycle@gmail.com"
         pwd = sys.argv[3] if len(sys.argv) > 3 else "Melchan5."
         mfa = sys.argv[4] if len(sys.argv) > 4 else None
         do_login(acc, pwd, mfa)
     elif cmd == "mfa":
-        acc = sys.argv[2] if len(sys.argv) > 2 else "dwimeliantiistiqomah55@gmail.com"
+        acc = sys.argv[2] if len(sys.argv) > 2 else "anugrahtriplecycle@gmail.com"
         pwd = sys.argv[3] if len(sys.argv) > 3 else "Melchan5."
         mfa = sys.argv[4] if len(sys.argv) > 4 else None
         do_login(acc, pwd, mfa)

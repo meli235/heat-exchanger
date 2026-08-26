@@ -3,8 +3,6 @@
 import React from 'react';
 import {
   FileText,
-  ShieldCheck,
-  Cloud,
   Search
 } from 'lucide-react';
 import { TelemetryPoint } from '@/types';
@@ -46,7 +44,7 @@ export const LogsTab: React.FC<LogsTabProps> = ({
             <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
               <FileText className="w-6 h-6 text-sky-600" /> Laporan Monitoring Heat Exchanger
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">Sinkronisasi otomatis telemetri real-time ke Cloud Drive (Fasilitas unduh Flashdisk dinonaktifkan)</p>
+            <p className="text-xs text-slate-500 mt-0.5">Laporan & data telemetri real-time Heat Exchanger</p>
           </div>
 
           <ExportButtons
@@ -55,30 +53,6 @@ export const LogsTab: React.FC<LogsTabProps> = ({
             onCloudDriveAccess={handleCloudDriveAccess}
             onExportPDFReport={exportPDFReport}
           />
-        </div>
-
-        {/* Banner Informasi Keamanan & Proteksi Data Flashdisk */}
-        <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200/90 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 bg-emerald-500/20 text-emerald-700 rounded-xl shrink-0">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
-                Proteksi Data HE: Ambil Data via Flashdisk Dinonaktifkan
-                <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 font-extrabold rounded-full text-[10px]">Auto Cloud Storage</span>
-              </h4>
-              <p className="text-slate-600 mt-0.5 leading-relaxed">
-                Pengambilan data manual menggunakan USB Flashdisk telah dinonaktifkan demi integritas & keamanan laboratorium. Seluruh log telemetri sensor Heat Exchanger otomatis terunggah dan tersimpan aman di Google Drive / Supabase Cloud DB.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleCloudDriveAccess}
-            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-1.5 transition text-xs shrink-0 active:scale-95"
-          >
-            <Cloud className="w-4 h-4 text-emerald-200" /> Buka Cloud Drive
-          </button>
         </div>
 
         <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/90 mb-6 space-y-1.5 text-xs">

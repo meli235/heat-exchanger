@@ -37,7 +37,7 @@ export const ServoControl: React.FC<ServoControlProps> = ({
       <input
         type="range"
         min="0"
-        max="90"
+        max="180"
         value={servoAngle}
         onChange={(e) => onChangeServoAngle(Number(e.target.value))}
         disabled={emergencyStopped || isAuto}
@@ -46,9 +46,9 @@ export const ServoControl: React.FC<ServoControlProps> = ({
         }`}
       />
       <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
-        <span>0° (Closed)</span>
-        <span>{isAuto ? 'Otomatis ESP32' : '45° (Half)'}</span>
-        <span>90° (Open)</span>
+        <span>0° (Tutup)</span>
+        <span>90° (Setengah)</span>
+        <span>180° (Buka Penuh)</span>
       </div>
     </div>
   );

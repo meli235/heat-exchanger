@@ -151,8 +151,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               type="button"
               onClick={() => {
                 setSelectedDemoRole('admin');
-                setLoginEmail('dwimeliantiistiqomah55@gmail.com');
-                setLoginPassword('');
                 setLoginError(null);
               }}
               className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'admin'
@@ -167,8 +165,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               type="button"
               onClick={() => {
                 setSelectedDemoRole('operator');
-                setLoginEmail('dwi.melianti@mhs.itenas.ac.id');
-                setLoginPassword('');
                 setLoginError(null);
               }}
               className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${selectedDemoRole === 'operator'
@@ -181,19 +177,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </button>
           </div>
 
-          <div className="space-y-3.5 sm:space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            autoComplete="off"
+            className="space-y-3.5 sm:space-y-4"
+          >
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Email / Username</label>
               <div className="relative">
                 <input
-                  type="text"
+                  type="email"
+                  name="email"
+                  autoComplete="off"
                   value={loginEmail}
                   onChange={(e) => {
                     setLoginEmail(e.target.value);
                     setLoginError(null);
                   }}
                   className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition font-medium"
-                  placeholder="user@uad.ac.id"
+                  placeholder="Masukkan email Anda..."
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               </div>
@@ -208,7 +213,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setIsResetModalOpen(true);
                     setResetStep('INPUT_EMAIL');
                     setResetError(null);
-                    setResetEmailInput(loginEmail || 'admin@uad.ac.id');
+                    setResetEmailInput(loginEmail || '');
                   }}
                   className="text-[11px] font-bold text-sky-600 hover:text-sky-800 transition"
                 >
@@ -218,6 +223,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div className="relative">
                 <input
                   type={showLoginPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete="new-password"
                   value={loginPassword}
                   onChange={(e) => {
                     setLoginPassword(e.target.value);
@@ -257,14 +264,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
 
             <button
-              type="button"
-              onClick={() => handleLogin()}
+              type="submit"
               className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg shadow-sky-500/25 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
             >
               Masuk ke Dashboard Lab
               <ChevronRight className="w-4 h-4" />
             </button>
-          </div>
+          </form>
         </div>
       </main>
 
@@ -339,7 +345,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       required
                       value={resetEmailInput}
                       onChange={(e) => setResetEmailInput(e.target.value)}
-                      placeholder="nama@mhs.itenas.ac.id / admin@uad.ac.id"
+                      placeholder="nama@uad.ac.id / email@domain.com"
                       className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />

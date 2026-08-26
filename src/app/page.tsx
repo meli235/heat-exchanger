@@ -92,11 +92,11 @@ import {
   HeaterControl,
   FlowModeSelector,
   ServoControl,
-  TargetTempSlider
+  TargetTempSlider,
+  SteamValveControl
 } from '@/components/control';
 import { LoginScreen } from '@/components/auth';
 import { CctvTab } from '@/components/cctv';
-import { useCctvAutoUpload } from '@/hooks/useCctvAutoUpload';
 import { LogsTab } from '@/components/logs';
 import { AlarmsTab } from '@/components/alarms';
 import { UsersTab } from '@/components/users';
@@ -130,11 +130,16 @@ export default function FluidHEDashboard() {
     handleFlowModeChange,
     handleControlModeChange,
     handleHeaterPowerToggle,
+    handleHeater1PowerToggle,
+    handleHeater2PowerToggle,
     handleTargetTempChange,
     handleServoAngleChange,
     handleTargetFlowChange,
     handleUapStatusToggle,
+    handleUapAutoToggle,
+    handleUapIntervalChange,
     handleAirDinginToggle,
+    handleStepButtonPress,
     handleMomentaryButtonPress
   } = useSupabaseIntegration();
 
@@ -227,8 +232,8 @@ export default function FluidHEDashboard() {
     email: 'admin@uad.ac.id',
     role: 'admin'
   });
-  const [loginEmail, setLoginEmail] = useState<string>('admin@uad.ac.id');
-  const [loginPassword, setLoginPassword] = useState<string>('12345678');
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
   const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('admin');
 
   // ─── NAVIGATION & TOUR STATE ───
@@ -311,11 +316,7 @@ export default function FluidHEDashboard() {
   // ─── USER MANAGEMENT STATE (2-TIER: ADMIN, OPERATOR) ───
   const todayStr = new Date().toISOString().slice(0, 10);
   const [usersList, setUsersList] = useState<UserItem[]>([
-    { id: 'USR-01', name: 'Dwi Melianti (Admin Utama / Dosen)', email: 'dwimeliantiistiqomah55@gmail.com', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false },
-    { id: 'USR-02', name: 'Dwi Melianti (Mahasiswa ITENAS)', email: 'dwi.melianti@mhs.itenas.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:50', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' },
-    { id: 'USR-03', name: 'wink (Mahasiswa Operator)', email: 'mr.winkyy23@gmail.com', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 14:30', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' },
-    { id: 'USR-04', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false },
-    { id: 'USR-05', name: 'Rahmat Hidayat (Mahasiswa Operator)', email: 'operator@uad.ac.id', role: 'operator', status: 'Active', lastLogin: 'Hari ini, 13:40', isScheduleRestricted: true, allowedStartDate: todayStr, allowedEndDate: todayStr, allowedStartTime: '07:00', allowedEndTime: '18:00' }
+    { id: 'USR-01', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false }
   ]);
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
@@ -339,9 +340,6 @@ export default function FluidHEDashboard() {
 
   // ─── AUTH & SECURE EMAIL OTP PASSWORD RESET STATES ───
   const DEFAULT_PASSWORDS: Record<string, string> = {
-    'dwimeliantiistiqomah55@gmail.com': 'admin123',
-    'dwi.melianti@mhs.itenas.ac.id': 'operator123',
-    'mr.winkyy23@gmail.com': 'LZY8aTLn',
     'admin@uad.ac.id': 'admin123',
     'operator@uad.ac.id': 'operator123',
     'dev@uad.ac.id': 'dev123'
@@ -353,7 +351,7 @@ export default function FluidHEDashboard() {
   // Email OTP Reset Password Modal States
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
   const [resetStep, setResetStep] = useState<'INPUT_EMAIL' | 'VERIFY_OTP' | 'NEW_PASSWORD' | 'SUCCESS'>('INPUT_EMAIL');
-  const [resetEmailInput, setResetEmailInput] = useState<string>('dwimeliantiistiqomah55@gmail.com');
+  const [resetEmailInput, setResetEmailInput] = useState<string>('');
   const [generatedOtp, setGeneratedOtp] = useState<string>('');
   const [enteredOtp, setEnteredOtp] = useState<string>('');
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
@@ -375,7 +373,17 @@ export default function FluidHEDashboard() {
       if (savedUsers) {
         const parsedUsers = JSON.parse(savedUsers);
         if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
-          setUsersList(parsedUsers);
+          // Bersihkan akun legacy yang sudah dihapus
+          const cleanedUsers = parsedUsers.filter((u: UserItem) => {
+            const em = (u.email || '').toLowerCase();
+            return !em.includes('itenas') && !em.includes('dwimelianti') && !em.includes('winkyy') && !em.includes('anugrahtriplecycle') && em !== 'operator@uad.ac.id';
+          });
+          if (cleanedUsers.length > 0) {
+            setUsersList(cleanedUsers);
+            localStorage.setItem('fluidhe_user_accounts', JSON.stringify(cleanedUsers));
+          } else {
+            localStorage.removeItem('fluidhe_user_accounts');
+          }
         }
       }
     } catch (e) {
@@ -490,6 +498,8 @@ export default function FluidHEDashboard() {
       status: 'Active',
       lastLogin: 'Belum Pernah',
       isScheduleRestricted: newUserRole === 'operator' ? newUserRestricted : false,
+      allowedStartDate: newUserStartDate || todayStr,
+      allowedEndDate: newUserEndDate || todayStr,
       allowedDays: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
       allowedStartTime: newUserStartTime || '07:00',
       allowedEndTime: newUserEndTime || '18:00'
@@ -507,6 +517,13 @@ export default function FluidHEDashboard() {
     } catch (err) {
       console.error('Failed to save to localStorage', err);
     }
+
+    setLastCreatedUserCredentials({
+      email: email,
+      name: newUserName.trim(),
+      password: randomPassword,
+      role: newUserRole
+    });
 
     setIsAddingUser(true);
     try {
@@ -527,12 +544,6 @@ export default function FluidHEDashboard() {
       setIsAddingUser(false);
     }
 
-    setLastCreatedUserCredentials({
-      email: email,
-      name: newUserName.trim(),
-      password: randomPassword,
-      role: newUserRole
-    });
     setNewUserName('');
     setNewUserEmail('');
     setNewUserRole('operator');
@@ -949,8 +960,6 @@ export default function FluidHEDashboard() {
 
     // Security Check: Whitelist verification (User must be registered in usersList or system accounts)
     const isRegisteredUser = usersList.some(u => u.email.toLowerCase() === email) ||
-      email === 'dwimeliantiistiqomah55@gmail.com' ||
-      email === 'dwi.melianti@mhs.itenas.ac.id' ||
       email === 'admin@uad.ac.id' ||
       email === 'operator@uad.ac.id' ||
       email === 'dev@uad.ac.id';
@@ -1123,27 +1132,6 @@ export default function FluidHEDashboard() {
     setTimeout(() => setCctvToast(null), 3500);
   };
 
-  // ─── CCTV AUTO UPLOAD HOOK ───
-  const {
-    status: autoUploadStatus,
-    lastUploadTime,
-    queueLength,
-    logs: autoUploadLogs,
-    isEnabled: autoUploadIsEnabled,
-    toggleAutoUpload,
-    forceUploadNow,
-  } = useCctvAutoUpload({
-    videoRef,
-    webrtcConnected,
-    latestData,
-    triggerToast: triggerCctvToast,
-    intervalMs: 30000,       // 30 detik (untuk mode test cepat)
-    queueIntervalMs: 120000, // 2 menit
-    maxRetries: 3,
-    uploadTimeoutMs: 30000,
-    enabled: true,
-  });
-
   const handlePtzAction = async (action: string) => {
     setPtzMoving(action);
 
@@ -1195,23 +1183,25 @@ export default function FluidHEDashboard() {
 
   const handleTakeSnapshot = () => {
     const video = videoRef.current;
-    if (!video || !webrtcConnected) {
-      triggerCctvToast('⚠️ Tidak dapat mengambil snapshot — kamera belum terhubung', 'warning');
-      return;
-    }
 
     const timeStr = new Date().toLocaleTimeString('id-ID').replace(/:/g, '-');
     const dateStr = new Date().toLocaleDateString('id-ID');
 
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 1920;
-      canvas.height = video.videoHeight || 1080;
+      canvas.width = (video && video.videoWidth) ? video.videoWidth : 1280;
+      canvas.height = (video && video.videoHeight) ? video.videoHeight : 720;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Draw current video frame
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Draw current video frame if video element exists and has content
+      if (video && video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      } else {
+        // Fallback dark canvas frame
+        ctx.fillStyle = '#09090b';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
 
       // Add watermark overlay bar
       const barHeight = 56;
@@ -1232,12 +1222,7 @@ export default function FluidHEDashboard() {
         const fileName = `Snapshot_HE_${timeStr}.png`;
 
         try {
-          // Upload to Google Drive (cctv-snapshots folder)
-          const driveForm = new FormData();
-          driveForm.append('file', new File([blob], fileName, { type: 'image/png' }));
-          driveForm.append('folder', 'cctv-snapshots');
-          fetch('/api/drive', { method: 'POST', body: driveForm }).catch(err => console.error('Drive snapshot upload notice:', err));
-
+          // Direct Upload to Google Drive (CCTV_Snapshots folder)
           const result = await uploadToCloud(blob, fileName, 'cctv-snapshots');
 
           const newSnap = {
@@ -1257,7 +1242,7 @@ export default function FluidHEDashboard() {
           };
 
           setCctvMediaList((prev) => [newSnap, ...prev]);
-          triggerCctvToast('📸 Snapshot tersimpan di Cloud Storage!', 'success');
+          triggerCctvToast('📸 Snapshot tersimpan otomatis di Google Drive!', 'success');
         } catch (err: any) {
           console.error('Snapshot Cloud upload error:', err);
           const fallbackSnap = {
@@ -1288,8 +1273,8 @@ export default function FluidHEDashboard() {
   const handleToggleManualRecord = () => {
     if (!isManualRecording) {
       // START recording
-      const stream = webrtcStreamRef.current;
-      if (!stream || !webrtcConnected) {
+      const stream = (videoRef.current && (videoRef.current as any).captureStream ? (videoRef.current as any).captureStream(30) : null) || webrtcStreamRef.current;
+      if (!stream) {
         triggerCctvToast('⚠️ Tidak dapat merekam — kamera belum terhubung', 'warning');
         return;
       }
@@ -1331,9 +1316,9 @@ export default function FluidHEDashboard() {
           const dur = recordingSeconds;
           const timeStr = new Date().toLocaleTimeString('id-ID').replace(/:/g, '-');
           const dateStr = new Date().toLocaleDateString('id-ID');
-          const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/mp4' });
           const localVideoUrl = URL.createObjectURL(blob);
-          const fileName = `Recording_HE_${dur}s_${timeStr}.webm`;
+          const fileName = `Recording_HE_${dur}s_${timeStr}.mp4`;
 
           try {
             const result = await uploadToCloud(blob, fileName, 'cctv-recordings');
@@ -1356,7 +1341,7 @@ export default function FluidHEDashboard() {
             };
 
             setCctvMediaList((prev) => [newVideo, ...prev]);
-            triggerCctvToast(`💾 Rekaman ${dur}s tersimpan di Cloud Storage!`, 'success');
+            triggerCctvToast(`☁️ Rekaman ${dur}s tersimpan otomatis di Google Drive!`, 'success');
           } catch (err: any) {
             console.error('Recording Cloud upload error:', err);
             const fallbackVideo = {
@@ -1522,7 +1507,11 @@ export default function FluidHEDashboard() {
     if (e) e.preventDefault();
     setLoginError(null);
 
-    const email = (loginEmail || (selectedDemoRole === 'admin' ? 'dwimeliantiistiqomah55@gmail.com' : 'dwi.melianti@mhs.itenas.ac.id')).toLowerCase().trim();
+    if (!loginEmail || !loginEmail.trim()) {
+      setLoginError('Silakan masukkan email / username akun Anda.');
+      return;
+    }
+    const email = loginEmail.toLowerCase().trim();
 
     // STRICT: Password is required to log in!
     if (!loginPassword || !loginPassword.trim()) {
@@ -1552,9 +1541,9 @@ export default function FluidHEDashboard() {
 
     const found = activeUsers.find(u => u.email.toLowerCase() === email) || usersList.find(u => u.email.toLowerCase() === email);
 
-    const defaultFallback = (email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id' || (found && found.role === 'admin'))
+    const defaultFallback = (email === 'admin@uad.ac.id' || (found && found.role === 'admin'))
       ? 'admin123'
-      : (email === 'dwi.melianti@mhs.itenas.ac.id' || email === 'operator@uad.ac.id' || (found && found.role === 'operator'))
+      : (email === 'operator@uad.ac.id' || (found && found.role === 'operator'))
         ? 'operator123'
         : 'dev123';
 
@@ -1601,9 +1590,9 @@ export default function FluidHEDashboard() {
       if (found.role === 'operator') {
         setOperatorSessionRemaining(operatorSessionLimit * 60);
       }
-    } else if (selectedDemoRole === 'admin' || email === 'dwimeliantiistiqomah55@gmail.com' || email === 'admin@uad.ac.id') {
+    } else if (selectedDemoRole === 'admin' || email === 'admin@uad.ac.id') {
       setCurrentUser({
-        name: 'Dwi Melianti (Admin Utama / Dosen)',
+        name: 'Admin Lab (Anugrah Triple Cycle)',
         email: email,
         role: 'admin'
       });
@@ -2622,20 +2611,32 @@ export default function FluidHEDashboard() {
                     <HeaterControl
                       controlMode={supabaseControls.control_mode}
                       heaterStatus={supabaseControls.heater_status}
+                      heater1Status={supabaseControls.heater_1_status ?? supabaseControls.heater_status}
+                      heater2Status={supabaseControls.heater_2_status ?? supabaseControls.heater_status}
                       emergencyStopped={emergencyStopped}
                       dualHeaterState={dualHeaterState}
                       onToggleHeater={(nextState) => {
                         setHeaterMasterPower(nextState);
                         handleHeaterPowerToggle(nextState);
-                        triggerSyncFeedback('Daya Pemanas', nextState ? 'POWER ON' : 'POWER OFF');
+                        triggerSyncFeedback('Daya Master Heater', nextState ? 'POWER ON' : 'POWER OFF');
+                      }}
+                      onToggleHeater1={(nextState) => {
+                        handleHeater1PowerToggle(nextState);
+                        triggerSyncFeedback('Heater 1 (1000W)', nextState ? 'ON' : 'OFF');
+                      }}
+                      onToggleHeater2={(nextState) => {
+                        handleHeater2PowerToggle(nextState);
+                        triggerSyncFeedback('Heater 2 (500W)', nextState ? 'ON' : 'OFF');
                       }}
                     />
 
-                    {/* Slider Target Suhu (TC1 Setpoint) */}
+                    {/* Step Level P1 - P7 + Interactive Naik & Turun Buttons (200ms Pulse) */}
                     <TargetTempSlider
                       targetTemp={supabaseControls.target_temp}
                       controlMode={supabaseControls.control_mode}
                       emergencyStopped={emergencyStopped}
+                      isBtnUpActive={activeMomentaryButtons.btn_up}
+                      isBtnDownActive={activeMomentaryButtons.btn_down}
                       onChangeTargetTemp={(val) => {
                         setTc1Setpoint(val);
                         handleTargetTempChange(val);
@@ -2644,9 +2645,21 @@ export default function FluidHEDashboard() {
                         }
                         triggerSyncFeedback('Target Suhu', `${val.toFixed(1)}°C`);
                       }}
+                      onStepUp={() => {
+                        handleStepButtonPress('btn_up');
+                        const nextTemp = Math.min(90, (supabaseControls.target_temp || 30) + 10);
+                        handleTargetTempChange(nextTemp);
+                        triggerSyncFeedback('Tombol NAIK Suhu', `btn_up (300ms) ➔ ${nextTemp}°C`);
+                      }}
+                      onStepDown={() => {
+                        handleStepButtonPress('btn_down');
+                        const nextTemp = Math.max(30, (supabaseControls.target_temp || 30) - 10);
+                        handleTargetTempChange(nextTemp);
+                        triggerSyncFeedback('Tombol TURUN Suhu', `btn_down (300ms) ➔ ${nextTemp}°C`);
+                      }}
                     />
 
-                    {/* Slider Sudut Servo (0 - 90 Derajat) */}
+                    {/* Slider Sudut Servo (0 - 180 Derajat) */}
                     <ServoControl
                       servoAngle={supabaseControls.servo_angle}
                       controlMode={supabaseControls.control_mode}
@@ -2756,34 +2769,25 @@ export default function FluidHEDashboard() {
                       </div>
                     </div>
 
-                    {/* Toggle Switch Katup Uap (uap_status) */}
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <label className="text-xs font-bold text-slate-800">Katup Uap (Uap Status)</label>
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
-                          supabaseControls.uap_status ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
-                        }`}>
-                          {supabaseControls.uap_status ? 'OPEN (TERBUKA)' : 'CLOSED (TERTUTUP)'}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextVal = !supabaseControls.uap_status;
-                          handleUapStatusToggle(nextVal);
-                          triggerSyncFeedback('Katup Uap', nextVal ? 'DIBUKA' : 'DITUTUP');
-                        }}
-                        disabled={emergencyStopped}
-                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
-                          supabaseControls.uap_status
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
-                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                        }`}
-                      >
-                        <Power className="w-4 h-4" />
-                        {supabaseControls.uap_status ? 'Tutup Katup Uap' : 'Buka Katup Uap'}
-                      </button>
-                    </div>
+                    {/* Katup Uap Dual Mode (Manual & Scheduled Auto) */}
+                    <SteamValveControl
+                      uapStatus={supabaseControls.uap_status ?? false}
+                      uapAutoStatus={supabaseControls.uap_auto_status ?? false}
+                      uapIntervalMin={supabaseControls.uap_interval_min ?? 10}
+                      emergencyStopped={emergencyStopped}
+                      onToggleUapManual={(nextVal: boolean) => {
+                        handleUapStatusToggle(nextVal);
+                        triggerSyncFeedback('Katup Uap Manual', nextVal ? 'DIBUKA' : 'DITUTUP');
+                      }}
+                      onToggleUapAuto={(nextVal: boolean) => {
+                        handleUapAutoToggle(nextVal);
+                        triggerSyncFeedback('Katup Uap Otomatis', nextVal ? 'AKTIF' : 'NONAKTIF');
+                      }}
+                      onChangeUapInterval={(min: number) => {
+                        handleUapIntervalChange(min);
+                        triggerSyncFeedback('Interval Katup Uap', `${min} Menit`);
+                      }}
+                    />
 
                     {/* Toggle Switch Katup Air Dingin (air_dingin) */}
                     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
@@ -2936,13 +2940,6 @@ export default function FluidHEDashboard() {
               handlePtzPreset={handlePtzPreset}
               ptzMoving={ptzMoving}
               latestData={latestData}
-              autoUploadStatus={autoUploadStatus}
-              lastAutoUploadTime={lastUploadTime}
-              autoUploadQueueLength={queueLength}
-              autoUploadIsEnabled={autoUploadIsEnabled}
-              onToggleAutoUpload={toggleAutoUpload}
-              onForceUploadNow={forceUploadNow}
-              autoUploadLogs={autoUploadLogs}
             />
           )}
 
@@ -3086,7 +3083,7 @@ export default function FluidHEDashboard() {
                       required
                       value={resetEmailInput}
                       onChange={(e) => setResetEmailInput(e.target.value)}
-                      placeholder="nama@mhs.itenas.ac.id / admin@uad.ac.id"
+                      placeholder="nama@uad.ac.id / email@domain.com"
                       className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -3528,7 +3525,7 @@ export default function FluidHEDashboard() {
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard?.writeText('https://drive.google.com/drive/folders/uad-heat-exchanger-lab');
+                  navigator.clipboard?.writeText('https://drive.google.com/drive/folders/1f9bPwAzlAIIZa1EHQqm588U-bsiWh5hv?usp=sharing');
                   alert('Link repositori Google Drive berhasil disalin ke clipboard!');
                 }}
                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95"

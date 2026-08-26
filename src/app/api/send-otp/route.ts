@@ -13,8 +13,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const smtpUser = process.env.SMTP_USER || 'dwimeliantiistiqomah55@gmail.com';
-    const smtpPass = (process.env.SMTP_PASS || 'uzyggnbipmmwylgp').replace(/\s+/g, '');
+    const smtpUser = process.env.SMTP_USER || 'anugrahtriplecycle@gmail.com';
+    const smtpPass = (process.env.SMTP_PASS || 'zbwoavpuyibkxbgn').replace(/\s+/g, '');
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',

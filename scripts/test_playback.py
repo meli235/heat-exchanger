@@ -2,7 +2,7 @@ import socket
 import urllib.request
 import base64
 
-cam_ip = "192.168.101.7"
+cam_ip = "192.168.1.12"
 cam_pass = "TJPCYS"
 
 # Test RTSP port 554 connection for playback track

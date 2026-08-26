@@ -6,7 +6,7 @@ SESSION_FILE = os.path.join(os.path.dirname(__file__), 'ezviz_session.json')
 REGION_URL = "apiisgp.ezvizlife.com"
 SERIAL = "BK8777283"
 
-client = EzvizClient(account="dwimeliantiistiqomah55@gmail.com", password="Melchan5.", url=REGION_URL)
+client = EzvizClient(account="anugrahtriplecycle@gmail.com", password="Melchan5.", url=REGION_URL)
 try:
     client.login()
     print("EZVIZ Login OK!")

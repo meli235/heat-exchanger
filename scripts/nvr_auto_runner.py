@@ -4,7 +4,7 @@ import os
 import sys
 
 FFMPEG_PATH = r"C:\Users\mrwin\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-essentials_build\bin\ffmpeg.exe"
-RTSP_URL = "rtsp://admin:TJPCYS@192.168.101.7:554/Streaming/Channels/101"
+RTSP_URL = "rtsp://admin:TJPCYS@192.168.1.12:554/Streaming/Channels/101"
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMP_DIR = os.path.join(BASE_DIR, "records", "temp")

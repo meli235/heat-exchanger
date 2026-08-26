@@ -68,19 +68,23 @@ export interface TelemetryRow {
 }
 
 export interface DeviceControlsRow {
-  id: number;                                 // Row ID = 1
-  flow_mode: 'COUNTER' | 'CO-CURRENT';       // Mode Aliran
-  control_mode: 'AUTO' | 'MANUAL';           // Control Mode (Auto / Manual)
-  heater_status: boolean;                    // Heater Power (true / false)
-  target_temp: number;                       // Target Suhu (°C, float)
-  target_flow?: number;                      // Target Flow (0.0 - 10.0 L/min)
-  servo_angle: number;                       // Sudut Servo (0 - 90 Derajat, int)
-  uap_status?: boolean;                      // Katup Uap (true = Buka, false = Tutup)
-  air_dingin?: boolean;                      // Katup Air Dingin (true = Buka, false = Tutup)
-  btn_up?: boolean;                          // Momentary Servo Button UP
-  btn_onoff?: boolean;                       // Momentary Servo Button ON/OFF
-  btn_down?: boolean;                        // Momentary Servo Button DOWN
-  updated_at?: string;
+  id: number;                                // Row ID = 1 (int4)
+  updated_at?: string;                       // timestamptz
+  control_mode: 'AUTO' | 'MANUAL';           // text
+  flow_mode: 'COUNTER' | 'CO-CURRENT';       // text
+  heater_status: boolean;                    // bool
+  heater_1_status?: boolean;                 // UI extension
+  heater_2_status?: boolean;                 // UI extension
+  servo_angle: number;                       // int4 (0 - 180)
+  target_temp: number;                       // float4
+  uap_status?: boolean;                      // bool
+  uap_auto_status?: boolean;                 // UI extension
+  uap_interval_min?: number;                 // UI extension
+  air_dingin?: boolean;                      // bool
+  target_flow?: number;                      // numeric
+  btn_up?: boolean;                          // bool
+  btn_onoff?: boolean;                       // bool
+  btn_down?: boolean;                        // bool
 }
 
 export type SupabaseConnectionStatus = 'ONLINE' | 'OFFLINE' | 'CONNECTING' | 'ERROR';

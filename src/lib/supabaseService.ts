@@ -2,26 +2,30 @@ import {
   TelemetryRow,
   DeviceControlsRow
 } from '@/types';
-
+import { getStoredAnonKey } from './supabase';
 
 /**
  * Mengambil data telemetri awal dari Supabase (via Server Proxy API)
  */
 export async function fetchLatestTelemetry(limit: number = 20): Promise<{ data: TelemetryRow[] | null; error: Error | null }> {
   try {
-    const res = await fetch(`/api/supabase/telemetry?limit=${limit}`, { cache: 'no-store' });
+    const customKey = getStoredAnonKey();
+    const headers: Record<string, string> = {};
+    if (customKey && customKey.trim().length > 10) {
+      headers['x-supabase-key'] = customKey.trim();
+    }
+
+    const res = await fetch(`/api/supabase/telemetry?limit=${limit}`, { cache: 'no-store', headers });
     const json = await res.json();
 
     if (!res.ok || json.error) {
       const errMsg = json.error || 'Failed to fetch telemetry';
-      console.warn('[Supabase API Warn] fetch telemetry_data status:', errMsg);
       return { data: null, error: new Error(errMsg) };
     }
 
     return { data: json.data as TelemetryRow[], error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error during fetchLatestTelemetry';
-    console.warn('[Supabase API Exception] fetchLatestTelemetry:', errorMsg);
     return { data: null, error: new Error(errorMsg) };
   }
 }
@@ -31,19 +35,23 @@ export async function fetchLatestTelemetry(limit: number = 20): Promise<{ data: 
  */
 export async function fetchDeviceControls(): Promise<{ data: DeviceControlsRow | null; error: Error | null }> {
   try {
-    const res = await fetch('/api/supabase/controls', { cache: 'no-store' });
+    const customKey = getStoredAnonKey();
+    const headers: Record<string, string> = {};
+    if (customKey && customKey.trim().length > 10) {
+      headers['x-supabase-key'] = customKey.trim();
+    }
+
+    const res = await fetch('/api/supabase/controls', { cache: 'no-store', headers });
     const json = await res.json();
 
     if (!res.ok || json.error) {
       const errMsg = json.error || 'Failed to fetch device_controls';
-      console.warn('[Supabase API Warn] fetch device_controls status:', errMsg);
       return { data: null, error: new Error(errMsg) };
     }
 
     return { data: json.data as DeviceControlsRow, error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error during fetchDeviceControls';
-    console.warn('[Supabase API Exception] fetchDeviceControls:', errorMsg);
     return { data: null, error: new Error(errorMsg) };
   }
 }
@@ -55,9 +63,15 @@ export async function updateDeviceControls(
   updates: Partial<Omit<DeviceControlsRow, 'id'>>
 ): Promise<{ success: boolean; data: DeviceControlsRow | null; error: string | null }> {
   try {
+    const customKey = getStoredAnonKey();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (customKey && customKey.trim().length > 10) {
+      headers['x-supabase-key'] = customKey.trim();
+    }
+
     const res = await fetch('/api/supabase/controls', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(updates)
     });
 
@@ -65,14 +79,12 @@ export async function updateDeviceControls(
 
     if (!res.ok || !json.success) {
       const errMsg = json.error || 'Failed to update device_controls';
-      console.warn('[Supabase API Control Update Warn]:', errMsg);
       return { success: false, data: null, error: errMsg };
     }
 
     return { success: true, data: json.data as DeviceControlsRow, error: null };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Koneksi gagal saat memperbarui perintah kontrol';
-    console.warn('[Supabase API Control Exception]:', errorMsg);
     return { success: false, data: null, error: errorMsg };
   }
 }
@@ -91,20 +103,28 @@ export const supabaseControlService = {
     return updateDeviceControls({ control_mode: controlMode });
   },
 
-  // 3. Tombol Heater Power (boolean true / false)
-  setHeaterPower: async (heaterStatus: boolean) => {
-    return updateDeviceControls({ heater_status: heaterStatus });
+  // 3. Tombol Heater 1 & 2 Power Terpisah (boolean true / false)
+  setHeater1Power: async (status: boolean) => {
+    return updateDeviceControls({ heater_status: status, btn_onoff: status, control_mode: 'MANUAL' });
   },
 
-  // 4. Slider/Input Target Suhu (float, e.g. 50.0)
+  setHeater2Power: async (status: boolean) => {
+    return updateDeviceControls({ heater_status: status, btn_onoff: status, control_mode: 'MANUAL' });
+  },
+
+  setHeaterPower: async (heaterStatus: boolean) => {
+    return updateDeviceControls({ heater_status: heaterStatus, btn_onoff: heaterStatus, control_mode: 'MANUAL' });
+  },
+
+  // 4. Slider/Input Target Suhu (float, e.g. 62.5)
   setTargetTemp: async (targetTemp: number) => {
     const parsedFloat = parseFloat(targetTemp.toFixed(1));
     return updateDeviceControls({ target_temp: parsedFloat });
   },
 
-  // 5. Slider/Input Sudut Servo (0 - 90 Derajat, integer e.g. 45)
+  // 5. Slider/Input Sudut Servo (0 - 180 Derajat, integer e.g. 52)
   setServoAngle: async (servoAngle: number) => {
-    const parsedInt = Math.min(90, Math.max(0, Math.round(servoAngle)));
+    const parsedInt = Math.min(180, Math.max(0, Math.round(servoAngle)));
     return updateDeviceControls({ servo_angle: parsedInt });
   },
 
@@ -114,9 +134,17 @@ export const supabaseControlService = {
     return updateDeviceControls({ target_flow: parsedFloat });
   },
 
-  // 7. Toggle Katup Uap (boolean true / false)
+  // 7. Toggle Katup Uap Manual & Otomatis Berjadwal
   setUapStatus: async (uapStatus: boolean) => {
     return updateDeviceControls({ uap_status: uapStatus });
+  },
+
+  setUapAutoStatus: async (uapAutoStatus: boolean) => {
+    return updateDeviceControls({ uap_auto_status: uapAutoStatus });
+  },
+
+  setUapIntervalMin: async (intervalMin: number) => {
+    return updateDeviceControls({ uap_interval_min: intervalMin });
   },
 
   // 8. Toggle Katup Air Dingin (boolean true / false)
@@ -124,13 +152,26 @@ export const supabaseControlService = {
     return updateDeviceControls({ air_dingin: airDinginStatus });
   },
 
-  // 9. Momentary Servo Buttons (Edge Detection: true -> wait 1500ms -> false)
+  // 9. Momentary Servo Buttons UP/DOWN (Rising edge pulse 200ms: true -> wait 200ms -> false)
+  triggerStepButton: async (btnName: 'btn_up' | 'btn_down') => {
+    try {
+      const startRes = await updateDeviceControls({ [btnName]: true });
+      if (!startRes.success) return startRes;
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } catch (err) {
+      console.warn(`Step button pulse start notice (${btnName}):`, err);
+    } finally {
+      return await updateDeviceControls({ [btnName]: false });
+    }
+  },
+
   triggerMomentaryButton: async (btnName: 'btn_up' | 'btn_onoff' | 'btn_down') => {
     try {
       const startRes = await updateDeviceControls({ [btnName]: true });
       if (!startRes.success) return startRes;
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     } catch (err) {
       console.warn(`Momentary button pulse start notice (${btnName}):`, err);
     } finally {

@@ -28,12 +28,12 @@ export function useSupabaseIntegration() {
     id: 1,
     flow_mode: 'COUNTER',
     control_mode: 'MANUAL',
-    heater_status: true,
-    target_temp: 50.0,
-    target_flow: 5.0,
-    servo_angle: 45,
-    uap_status: false,
+    heater_status: false,
+    servo_angle: 52,
+    target_temp: 62.5,
+    uap_status: true,
     air_dingin: false,
+    target_flow: 2.0,
     btn_up: false,
     btn_onoff: false,
     btn_down: false
@@ -65,8 +65,8 @@ export function useSupabaseIntegration() {
       // 1. Fetch initial telemetry
       const { data: initialTelemetry, error: telemetryErr } = await fetchLatestTelemetry(20);
       if (telemetryErr) {
-        if (telemetryErr.message.includes('Invalid API key') || telemetryErr.message.includes('apiKey')) {
-          setErrorMessage('Supabase Anon Key tidak valid atau salah. Silakan masukkan Public Anon Key yang benar dari Supabase Dashboard.');
+        if (telemetryErr.message.includes('Invalid API key') || telemetryErr.message.includes('apiKey') || telemetryErr.message.includes('Unregistered API key')) {
+          setErrorMessage('Supabase Anon Key belum terdaftar di project Supabase ini. Silakan masukkan Public Anon Key (JWT starting with eyJhb...) dari Supabase Dashboard ➔ Project Settings ➔ API.');
         } else {
           setErrorMessage(`Gagal membaca telemetry_data: ${telemetryErr.message}`);
         }
@@ -194,9 +194,35 @@ export function useSupabaseIntegration() {
     return result;
   };
 
+  const handleHeater1PowerToggle = async (status: boolean) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, heater_status: status, heater_1_status: status, btn_onoff: status, control_mode: 'MANUAL' }));
+    const result = await supabaseControlService.setHeater1Power(status);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update heater_1_status: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleHeater2PowerToggle = async (status: boolean) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, heater_status: status, heater_2_status: status, btn_onoff: status, control_mode: 'MANUAL' }));
+    const result = await supabaseControlService.setHeater2Power(status);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update heater_2_status: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
   const handleHeaterPowerToggle = async (heaterStatus: boolean) => {
     setIsUpdatingControl(true);
-    setDeviceControls((prev) => ({ ...prev, heater_status: heaterStatus }));
+    setDeviceControls((prev) => ({ ...prev, heater_status: heaterStatus, heater_1_status: heaterStatus, heater_2_status: heaterStatus, btn_onoff: heaterStatus, control_mode: 'MANUAL' }));
     const result = await supabaseControlService.setHeaterPower(heaterStatus);
     setIsUpdatingControl(false);
     if (!result.success) {
@@ -259,6 +285,32 @@ export function useSupabaseIntegration() {
     return result;
   };
 
+  const handleUapAutoToggle = async (uapAutoStatus: boolean) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, uap_auto_status: uapAutoStatus }));
+    const result = await supabaseControlService.setUapAutoStatus(uapAutoStatus);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update uap_auto_status: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleUapIntervalChange = async (intervalMin: number) => {
+    setIsUpdatingControl(true);
+    setDeviceControls((prev) => ({ ...prev, uap_interval_min: intervalMin }));
+    const result = await supabaseControlService.setUapIntervalMin(intervalMin);
+    setIsUpdatingControl(false);
+    if (!result.success) {
+      setErrorMessage(`Gagal update uap_interval_min: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
   const handleAirDinginToggle = async (airDinginStatus: boolean) => {
     setIsUpdatingControl(true);
     setDeviceControls((prev) => ({ ...prev, air_dingin: airDinginStatus }));
@@ -266,6 +318,25 @@ export function useSupabaseIntegration() {
     setIsUpdatingControl(false);
     if (!result.success) {
       setErrorMessage(`Gagal update air_dingin: ${result.error}`);
+    } else {
+      setErrorMessage(null);
+    }
+    return result;
+  };
+
+  const handleStepButtonPress = async (btnName: 'btn_up' | 'btn_down') => {
+    setIsUpdatingControl(true);
+    setActiveMomentaryButtons((prev) => ({ ...prev, [btnName]: true }));
+    setDeviceControls((prev) => ({ ...prev, [btnName]: true }));
+
+    const result = await supabaseControlService.triggerStepButton(btnName);
+    
+    setActiveMomentaryButtons((prev) => ({ ...prev, [btnName]: false }));
+    setDeviceControls((prev) => ({ ...prev, [btnName]: false }));
+    setIsUpdatingControl(false);
+
+    if (!result.success) {
+      setErrorMessage(`Gagal memicu tombol ${btnName}: ${result.error}`);
     } else {
       setErrorMessage(null);
     }
@@ -305,11 +376,16 @@ export function useSupabaseIntegration() {
     handleFlowModeChange,
     handleControlModeChange,
     handleHeaterPowerToggle,
+    handleHeater1PowerToggle,
+    handleHeater2PowerToggle,
     handleTargetTempChange,
     handleServoAngleChange,
     handleTargetFlowChange,
     handleUapStatusToggle,
+    handleUapAutoToggle,
+    handleUapIntervalChange,
     handleAirDinginToggle,
+    handleStepButtonPress,
     handleMomentaryButtonPress
   };
 }

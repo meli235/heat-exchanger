@@ -1,6 +1,6 @@
 /**
  * src/app/api/drive/upload/route.ts
- * Perbaikan: Timeout, validasi, error handling yang lebih baik
+ * Google Drive Auto-Upload Proxy Route
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -25,18 +25,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validasi ukuran file (max 10MB)
-    const MAX_SIZE = 10 * 1024 * 1024;
+    // Validasi ukuran file (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB, max 10MB)` },
+        { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB, max 50MB)` },
         { status: 413 }
       );
     }
 
-    // Validasi tipe file
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'video/webm', 'video/mp4'];
-    if (!allowedTypes.includes(file.type)) {
+    // Validasi tipe file (fleksibel untuk MIME type video/webm;codecs=...)
+    const mime = (file.type || '').toLowerCase();
+    const isImage = mime.startsWith('image/');
+    const isVideo = mime.startsWith('video/') || mime.includes('webm') || mime.includes('mp4');
+    const isDocument = mime.includes('pdf') || mime.includes('sheet') || mime.includes('excel') || mime.includes('csv');
+
+    if (!isImage && !isVideo && !isDocument) {
       return NextResponse.json(
         { error: `File type ${file.type} not allowed` },
         { status: 415 }
@@ -48,16 +52,30 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(bytes);
     const base64Data = buffer.toString('base64');
 
-    // ─── Upload ke Google Apps Script dengan Timeout ───
+    // Ubah nama file .webm ke .mp4 agar Google Drive membuat preview thumbnail visual
+    let targetFileName = file.name;
+    if (isVideo && targetFileName.endsWith('.webm')) {
+      targetFileName = targetFileName.replace(/\.webm$/i, '.mp4');
+    }
+
+    // Tentukan mimeType yang akan dikirim ke Google Apps Script / DriveApp
+    let targetMimeType = file.type || 'application/octet-stream';
+    if (isVideo) {
+      targetMimeType = 'video/mp4';
+    } else if (isImage) {
+      targetMimeType = file.type || 'image/png';
+    }
+
+    // ─── Upload ke Google Apps Script dengan Timeout 35 detik ───
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 detik
+    const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 detik
 
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type,
+        fileName: targetFileName,
+        mimeType: targetMimeType,
         fileData: base64Data,
         folder: folder,
       }),
@@ -77,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      fileName: data.fileName,
+      fileName: data.fileName || targetFileName,
       viewUrl: data.viewUrl,
       downloadUrl: data.downloadUrl,
     });
@@ -88,7 +106,7 @@ export async function POST(req: NextRequest) {
     // Tangani AbortError (timeout)
     if (error.name === 'AbortError') {
       return NextResponse.json(
-        { error: 'Upload timeout — Google Script tidak merespons dalam 25 detik', code: 'TIMEOUT' },
+        { error: 'Upload timeout — Google Script tidak merespons dalam 35 detik', code: 'TIMEOUT' },
         { status: 504 }
       );
     }

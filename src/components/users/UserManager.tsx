@@ -244,7 +244,13 @@ export const UserManager: React.FC<UserManagerProps> = ({
                     <button
                       onClick={() => {
                         const nextRole: UserRole = u.role === 'operator' ? 'admin' : 'operator';
-                        setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
+                        const updated = usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x));
+                        setUsersList(updated);
+                        try {
+                          localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updated));
+                        } catch (e) {
+                          console.error(e);
+                        }
                       }}
                       className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition"
                       title="Ubah Role"
@@ -303,6 +309,13 @@ export const UserManager: React.FC<UserManagerProps> = ({
                   setUsersList(updated);
                   try {
                     localStorage.setItem('fluidhe_user_accounts', JSON.stringify(updated));
+                    const savedPass = localStorage.getItem('fluidhe_user_passwords');
+                    if (savedPass) {
+                      const parsedPass = JSON.parse(savedPass);
+                      delete parsedPass[userToDelete.email.toLowerCase()];
+                      delete parsedPass[userToDelete.email];
+                      localStorage.setItem('fluidhe_user_passwords', JSON.stringify(parsedPass));
+                    }
                   } catch (e) {
                     console.error(e);
                   }
@@ -391,7 +404,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
                     required
                     value={newUserName}
                     onChange={(e) => setNewUserName(e.target.value)}
-                    placeholder="Contoh: Anisa Rahmawati"
+                    placeholder="Nama Lengkap"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
                   />
                 </div>
@@ -404,7 +417,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
                       required
                       value={newUserEmail}
                       onChange={(e) => setNewUserEmail(e.target.value)}
-                      placeholder="user@mhs.itenas.ac.id / user@gmail.com"
+                      placeholder="user@uad.ac.id"
                       className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />

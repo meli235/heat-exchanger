@@ -4,7 +4,7 @@ api:
 
 streams:
   he_cctv:
-    - "rtsp://admin:TJPCYS@192.168.101.7:554/Streaming/Channels/101#backchannel=0"
+    - "rtsp://admin:TJPCYS@192.168.1.12:554/Streaming/Channels/101#backchannel=0"
     - "ffmpeg:he_cctv#audio=opus"
 
 # ⬇️ KONFIGURASI 24/7 RECORDING
