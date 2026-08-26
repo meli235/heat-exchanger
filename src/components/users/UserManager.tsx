@@ -80,6 +80,17 @@ export const UserManager: React.FC<UserManagerProps> = ({
   userToDelete,
   setUserToDelete
 }) => {
+  // Edit User State
+  const [userToEdit, setUserToEdit] = React.useState<UserItem | null>(null);
+  const [editName, setEditName] = React.useState<string>('');
+  const [editRole, setEditRole] = React.useState<UserRole>('operator');
+  const [editRestricted, setEditRestricted] = React.useState<boolean>(true);
+  const [editStartDate, setEditStartDate] = React.useState<string>('');
+  const [editEndDate, setEditEndDate] = React.useState<string>('');
+  const [editStartTime, setEditStartTime] = React.useState<string>('07:00');
+  const [editEndTime, setEditEndTime] = React.useState<string>('18:00');
+  const [editDays, setEditDays] = React.useState<string[]>(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']);
+  const [isSavingEdit, setIsSavingEdit] = React.useState<boolean>(false);
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -230,26 +241,20 @@ export const UserManager: React.FC<UserManagerProps> = ({
                       <Key className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={async () => {
-                        const nextRole: UserRole = u.role === 'operator' ? 'admin' : 'operator';
-                        try {
-                          const res = await fetch('/api/users', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: u.id, email: u.email, newRole: nextRole })
-                          });
-                          const data = await res.json();
-                          if (data.success && Array.isArray(data.users)) {
-                            setUsersList(data.users);
-                          } else {
-                            setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
-                          }
-                        } catch (e) {
-                          setUsersList(usersList.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
-                        }
+                      onClick={() => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        setUserToEdit(u);
+                        setEditName(u.name);
+                        setEditRole(u.role);
+                        setEditRestricted(u.isScheduleRestricted ?? (u.role === 'operator'));
+                        setEditStartDate(u.allowedStartDate || today);
+                        setEditEndDate(u.allowedEndDate || today);
+                        setEditStartTime(u.allowedStartTime || '07:00');
+                        setEditEndTime(u.allowedEndTime || '18:00');
+                        setEditDays(u.allowedDays && u.allowedDays.length > 0 ? u.allowedDays : ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']);
                       }}
-                      className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition"
-                      title="Ubah Role"
+                      className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                      title="Edit Pengguna & Jadwal Akses"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -464,6 +469,238 @@ export const UserManager: React.FC<UserManagerProps> = ({
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {/* MODAL EDIT PENGGUNA & JADWAL AKSES */}
+      {userToEdit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 text-slate-800 animate-in zoom-in-95 duration-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center border border-sky-100">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                    Edit Pengguna & Jadwal Akses
+                  </h3>
+                  <p className="text-[10.5px] text-slate-500 font-mono">{userToEdit.email}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setUserToEdit(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsSavingEdit(true);
+                try {
+                  const res = await fetch('/api/users', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      id: userToEdit.id,
+                      email: userToEdit.email,
+                      name: editName.trim(),
+                      newRole: editRole,
+                      isScheduleRestricted: editRole === 'operator' ? editRestricted : false,
+                      allowedStartDate: editStartDate,
+                      allowedEndDate: editEndDate,
+                      allowedStartTime: editStartTime,
+                      allowedEndTime: editEndTime,
+                      allowedDays: editDays
+                    })
+                  });
+                  const data = await res.json();
+                  if (data.success && Array.isArray(data.users)) {
+                    setUsersList(data.users);
+                  } else {
+                    setUsersList(
+                      usersList.map((x) =>
+                        x.id === userToEdit.id
+                          ? {
+                              ...x,
+                              name: editName.trim(),
+                              role: editRole,
+                              isScheduleRestricted: editRole === 'operator' ? editRestricted : false,
+                              allowedStartDate: editStartDate,
+                              allowedEndDate: editEndDate,
+                              allowedStartTime: editStartTime,
+                              allowedEndTime: editEndTime,
+                              allowedDays: editDays
+                            }
+                          : x
+                      )
+                    );
+                  }
+                  setUserToEdit(null);
+                } catch (err) {
+                  console.error('Failed to update user', err);
+                  alert('Gagal menyimpan perubahan');
+                } finally {
+                  setIsSavingEdit(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Lengkap Pengguna</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Role / Hak Akses</label>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as UserRole)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 cursor-pointer"
+                >
+                  <option value="operator">Operator (Mahasiswa Praktikum)</option>
+                  <option value="admin">Admin (Dosen / KaLab)</option>
+                </select>
+              </div>
+
+              {/* Toggle Pembatasan Jadwal */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">Batasi Jadwal Akses Lab</span>
+                    <span className="text-[10.5px] text-slate-500">
+                      {editRestricted ? 'Akses dibatasi sesuai tanggal, hari, dan jam tertentu' : 'Pengguna memiliki akses bebas 24/7 tanpa batas waktu'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editRestricted}
+                    onChange={(e) => setEditRestricted(e.target.checked)}
+                    className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
+                  />
+                </div>
+
+                {editRestricted && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200 animate-in fade-in duration-150">
+                    {/* Range Tanggal */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-sky-600" /> Tanggal Mulai
+                        </label>
+                        <input
+                          type="date"
+                          value={editStartDate}
+                          onChange={(e) => setEditStartDate(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-sky-600" /> Tanggal Berakhir
+                        </label>
+                        <input
+                          type="date"
+                          value={editEndDate}
+                          onChange={(e) => setEditEndDate(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Hari yang Diizinkan */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Hari Akses yang Diizinkan:</label>
+                      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
+                        {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].map((day) => {
+                          const isSelected = editDays.includes(day);
+                          return (
+                            <button
+                              type="button"
+                              key={day}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setEditDays(editDays.filter((d) => d !== day));
+                                } else {
+                                  setEditDays([...editDays, day]);
+                                }
+                              }}
+                              className={`py-1.5 px-1 text-[10.5px] font-bold rounded-lg border transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {day.slice(0, 3)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Jam Mulai & Selesai */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-sky-600" /> Jam Mulai Akses
+                        </label>
+                        <input
+                          type="time"
+                          value={editStartTime}
+                          onChange={(e) => setEditStartTime(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-sky-600" /> Jam Selesai Akses
+                        </label>
+                        <input
+                          type="time"
+                          value={editEndTime}
+                          onChange={(e) => setEditEndTime(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setUserToEdit(null)}
+                  className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="w-2/3 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Perubahan'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

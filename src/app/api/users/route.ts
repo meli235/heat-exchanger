@@ -154,33 +154,50 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH: Update User (Ganti Password, Ubah Role, dll)
+// PATCH: Update User (Ganti Password, Ubah Role, Jadwal Akses Tanggal/Hari/Jam, dll)
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { email, newPassword, newRole, id, lastLogin } = body;
+    const {
+      email,
+      id,
+      name,
+      newPassword,
+      newRole,
+      isScheduleRestricted,
+      allowedStartDate,
+      allowedEndDate,
+      allowedStartTime,
+      allowedEndTime,
+      allowedDays,
+      status,
+      lastLogin
+    } = body;
 
     const db = readDatabase();
 
-    if (email) {
+    const targetUser = db.users.find((x: UserItem) => {
+      if (id && x.id === id) return true;
+      if (email && x.email.toLowerCase() === email.toLowerCase().trim()) return true;
+      return false;
+    });
+
+    if (targetUser) {
+      if (name) targetUser.name = name.trim();
+      if (newRole) targetUser.role = newRole;
+      if (typeof isScheduleRestricted === 'boolean') targetUser.isScheduleRestricted = isScheduleRestricted;
+      if (allowedStartDate !== undefined) targetUser.allowedStartDate = allowedStartDate;
+      if (allowedEndDate !== undefined) targetUser.allowedEndDate = allowedEndDate;
+      if (allowedStartTime !== undefined) targetUser.allowedStartTime = allowedStartTime;
+      if (allowedEndTime !== undefined) targetUser.allowedEndTime = allowedEndTime;
+      if (Array.isArray(allowedDays)) targetUser.allowedDays = allowedDays;
+      if (status) targetUser.status = status;
+      if (lastLogin) targetUser.lastLogin = lastLogin;
+    }
+
+    if (email && newPassword) {
       const cleanEmail = email.toLowerCase().trim();
-      if (newPassword) {
-        db.passwords[cleanEmail] = newPassword;
-      }
-      if (newRole) {
-        const u = db.users.find((x: UserItem) => x.email.toLowerCase() === cleanEmail);
-        if (u) u.role = newRole;
-      }
-      if (lastLogin) {
-        const u = db.users.find((x: UserItem) => x.email.toLowerCase() === cleanEmail);
-        if (u) u.lastLogin = lastLogin;
-      }
-    } else if (id) {
-      const u = db.users.find((x: UserItem) => x.id === id);
-      if (u) {
-        if (newRole) u.role = newRole;
-        if (lastLogin) u.lastLogin = lastLogin;
-      }
+      db.passwords[cleanEmail] = newPassword;
     }
 
     writeDatabase(db);
