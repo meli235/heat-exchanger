@@ -189,7 +189,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <label className="block text-xs font-bold text-slate-700 mb-1">Email / Username</label>
               <div className="relative">
                 <input
-                  type="email"
+                  type="text"
                   name="email"
                   autoComplete="off"
                   value={loginEmail}
@@ -198,7 +198,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setLoginError(null);
                   }}
                   className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800 transition font-medium"
-                  placeholder="Masukkan email Anda..."
+                  placeholder="Masukkan email Anda atau ketik 1 (Dev Mode)..."
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               </div>
