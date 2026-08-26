@@ -37,7 +37,6 @@ export function setSupabaseAnonKey(newKey: string): SupabaseClient {
   return supabase;
 }
 
-// Telemetry Data Interface (Read Data Sensor from telemetry_data table)
 export interface TelemetryRow {
   id?: number | string;
   created_at?: string;
@@ -45,8 +44,14 @@ export interface TelemetryRow {
   temp_2: number;         // Sensor Suhu T2 (°C)
   temp_3: number;         // Sensor Suhu T3 (°C)
   temp_4: number;         // Sensor Suhu T4 (°C)
-  pressure: number;       // Tekanan (atm-g)
-  flow_rate: number;      // Debit Air (L/min)
+  pressure: number;       // Tekanan Inlet 1 (atm-g)
+  pressure_outlet?: number; // Tekanan Outlet 1 (atm-g)
+  delta_pressure?: number;  // Delta Tekanan 1 (atm-g)
+  pressure_inlet_2?: number; // Tekanan Inlet 2 (atm-g)
+  pressure_outlet_2?: number;// Tekanan Outlet 2 (atm-g)
+  delta_pressure_2?: number; // Delta Tekanan 2 (atm-g)
+  flow_rate: number;      // Debit Air 1 (L/min)
+  flow_rate_2?: number;   // Debit Air 2 (L/min)
   heater_status: string;  // "ON" | "OFF"
   warning_status: string; // "NORMAL" | "WARN_FLOW_HIGH"
 }
