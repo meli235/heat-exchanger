@@ -12,26 +12,17 @@ const DEFAULT_DATA: { users: UserItem[]; passwords: Record<string, string> } = {
   users: [
     {
       id: 'USR-01',
-      name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)',
-      email: 'admin@uad.ac.id',
-      role: 'admin',
-      status: 'Active',
-      lastLogin: 'Hari ini, 14:15',
-      isScheduleRestricted: false
-    },
-    {
-      id: 'USR-02',
       name: 'Admin Lab (Anugrah)',
       email: 'anugrahtriplecycle@gmail.com',
       role: 'admin',
       status: 'Active',
-      lastLogin: 'Hari ini, 14:15',
+      lastLogin: 'Belum Pernah',
       isScheduleRestricted: false
     }
   ],
   passwords: {
-    'admin@uad.ac.id': 'admin123',
-    'anugrahtriplecycle@gmail.com': 'admin123'
+    'anugrahtriplecycle@gmail.com': 'admin123',
+    'admin@uad.ac.id': 'admin123'
   }
 };
 

@@ -226,15 +226,15 @@ export default function FluidHEDashboard() {
 
 
   // ─── AUTH & ROLE STATE ───
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; role: UserRole }>({
-    name: 'Dr. Ir. Budi Santoso',
-    email: 'admin@uad.ac.id',
-    role: 'admin'
+    name: '',
+    email: '',
+    role: 'operator'
   });
   const [loginEmail, setLoginEmail] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
-  const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('admin');
+  const [selectedDemoRole, setSelectedDemoRole] = useState<UserRole>('operator');
 
   // ─── NAVIGATION & TOUR STATE ───
   const [activeTab, setActiveTab] = useState<'dashboard' | 'control' | 'cctv' | 'cctv-history' | 'logs' | 'alarms' | 'users'>('dashboard');
@@ -316,7 +316,7 @@ export default function FluidHEDashboard() {
   // ─── USER MANAGEMENT STATE (2-TIER: ADMIN, OPERATOR) ───
   const todayStr = new Date().toISOString().slice(0, 10);
   const [usersList, setUsersList] = useState<UserItem[]>([
-    { id: 'USR-01', name: 'Dr. Ir. Budi Santoso (Dosen / KaLab)', email: 'admin@uad.ac.id', role: 'admin', status: 'Active', lastLogin: 'Hari ini, 14:15', isScheduleRestricted: false }
+    { id: 'USR-01', name: 'Admin Lab (Anugrah)', email: 'anugrahtriplecycle@gmail.com', role: 'admin', status: 'Active', lastLogin: 'Belum Pernah', isScheduleRestricted: false }
   ]);
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
@@ -328,15 +328,6 @@ export default function FluidHEDashboard() {
   const [newUserStartTime, setNewUserStartTime] = useState<string>('07:00');
   const [newUserEndTime, setNewUserEndTime] = useState<string>('18:00');
   const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
-
-  // Active Session Lock State (Ensures ONLY 1 Active Account at a time)
-  const [activeSession, setActiveSession] = useState<{
-    email: string;
-    name: string;
-    role: string;
-    loginTime: string;
-    lastHeartbeat: number;
-  } | null>(null);
 
   // ─── AUTH & SECURE EMAIL OTP PASSWORD RESET STATES ───
   const DEFAULT_PASSWORDS: Record<string, string> = {
@@ -393,53 +384,18 @@ export default function FluidHEDashboard() {
     }
   }, [activeTab]);
 
-  // Single Active Session Lock & Heartbeat Synchronization Effect
+  // Real-time schedule enforcement: If admin changed schedule while operator is active
   useEffect(() => {
-    const checkActiveSession = () => {
-      try {
-        const stored = localStorage.getItem('fluidhe_active_session');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const now = Date.now();
-          if (now - parsed.lastHeartbeat < 15000) {
-            setActiveSession(parsed);
-          } else {
-            setActiveSession(null);
-          }
-        } else {
-          setActiveSession(null);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    };
+    if (!isLoggedIn || !currentUser || currentUser.role !== 'operator') return;
 
-    checkActiveSession();
     const interval = setInterval(() => {
-      checkActiveSession();
-      if (isLoggedIn && currentUser) {
-        // Real-time schedule enforcement: If admin changed schedule while operator is active
-        if (currentUser.role === 'operator') {
-          const freshUser = usersList.find((u) => u.email.toLowerCase() === currentUser.email.toLowerCase());
-          if (freshUser) {
-            const check = validateScheduleAccess(freshUser);
-            if (!check.allowed) {
-              alert(`⛔ AKSES DITUTUP OLEH ADMIN: ${check.reason}`);
-              handleLogout();
-              return;
-            }
-          }
+      const freshUser = usersList.find((u) => u.email.toLowerCase() === currentUser.email.toLowerCase());
+      if (freshUser) {
+        const check = validateScheduleAccess(freshUser);
+        if (!check.allowed) {
+          alert(`⛔ AKSES DITUTUP OLEH ADMIN: ${check.reason}`);
+          handleLogout();
         }
-
-        const mySession = {
-          email: currentUser.email,
-          name: currentUser.name,
-          role: currentUser.role,
-          loginTime: new Date().toLocaleTimeString('id-ID'),
-          lastHeartbeat: Date.now()
-        };
-        localStorage.setItem('fluidhe_active_session', JSON.stringify(mySession));
-        setActiveSession(mySession);
       }
     }, 3000);
 
@@ -1631,23 +1587,7 @@ export default function FluidHEDashboard() {
       return;
     }
 
-    // 1. SINGLE ACTIVE SESSION LOCK CHECK (Hanya 1 Akun Aktif per Sesi Waktu)
-    try {
-      const storedActiveStr = localStorage.getItem('fluidhe_active_session');
-      if (storedActiveStr) {
-        const storedActive = JSON.parse(storedActiveStr);
-        const now = Date.now();
-        const isStale = (now - storedActive.lastHeartbeat) > 15000;
-        if (!isStale && storedActive.email.toLowerCase() !== email.toLowerCase()) {
-          setLoginError(`🚫 AKSES DITOLAK (KONFLIK SESI): Sesi saat ini sedang aktif digunakan oleh "${storedActive.name}" (${storedActive.email}). Untuk mencegah bentrokan kendali hardware, sistem hanya mengizinkan 1 akun aktif dalam 1 waktu. Harap minta user tersebut logout terlebih dahulu.`);
-          return;
-        }
-      }
-    } catch (err) {
-      console.error('Session lock check error:', err);
-    }
-
-    // 2. JADWAL AKSES HARI & JAM CHECK (Schedule-Based Access Control)
+    // JADWAL AKSES HARI & JAM CHECK (Schedule-Based Access Control)
     if (found) {
       const scheduleStatus = validateScheduleAccess(found);
       if (!scheduleStatus.allowed) {
@@ -1707,12 +1647,6 @@ export default function FluidHEDashboard() {
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('fluidhe_active_session');
-    } catch (err) {
-      console.error(err);
-    }
-    setActiveSession(null);
     setIsLoggedIn(false);
   };
 
@@ -3078,8 +3012,6 @@ export default function FluidHEDashboard() {
               currentUser={currentUser}
               usersList={usersList}
               setUsersList={setUsersList}
-              activeSession={activeSession}
-              setActiveSession={setActiveSession}
               operatorSessionLimit={operatorSessionLimit}
               setOperatorSessionLimit={setOperatorSessionLimit}
               setOperatorSessionRemaining={setOperatorSessionRemaining}

@@ -26,12 +26,13 @@
       "email": "dwimeliantiistiqomah55@gmail.com",
       "role": "operator",
       "status": "Active",
-      "lastLogin": "Hari ini, 15.54",
+      "lastLogin": "Hari ini, 16.00",
       "isScheduleRestricted": true,
       "allowedStartDate": "2026-08-26",
       "allowedEndDate": "2026-08-26",
       "allowedDays": [
-        "Minggu"
+        "Minggu",
+        "Rabu"
       ],
       "allowedStartTime": "07:00",
       "allowedEndTime": "18:00"

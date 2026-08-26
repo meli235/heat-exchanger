@@ -9,8 +9,6 @@ export interface UsersTabProps {
   currentUser: { name: string; role: UserRole; email: string };
   usersList: UserItem[];
   setUsersList: (users: UserItem[]) => void;
-  activeSession: any;
-  setActiveSession: (sess: any) => void;
   operatorSessionLimit: number;
   setOperatorSessionLimit: (limit: number) => void;
   setOperatorSessionRemaining: (rem: number) => void;
@@ -42,8 +40,6 @@ export const UsersTab: React.FC<UsersTabProps> = ({
   currentUser,
   usersList,
   setUsersList,
-  activeSession,
-  setActiveSession,
   operatorSessionLimit,
   setOperatorSessionLimit,
   setOperatorSessionRemaining,
@@ -83,8 +79,6 @@ export const UsersTab: React.FC<UsersTabProps> = ({
           <UserManager
             usersList={usersList}
             setUsersList={setUsersList}
-            activeSession={activeSession}
-            setActiveSession={setActiveSession}
             operatorSessionLimit={operatorSessionLimit}
             setOperatorSessionLimit={setOperatorSessionLimit}
             setOperatorSessionRemaining={setOperatorSessionRemaining}

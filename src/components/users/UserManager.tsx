@@ -24,8 +24,6 @@ import { UserItem, UserRole } from '@/types';
 export interface UserManagerProps {
   usersList: UserItem[];
   setUsersList: (users: UserItem[]) => void;
-  activeSession: any;
-  setActiveSession: (sess: any) => void;
   operatorSessionLimit: number;
   setOperatorSessionLimit: (limit: number) => void;
   setOperatorSessionRemaining: (rem: number) => void;
@@ -56,8 +54,6 @@ export interface UserManagerProps {
 export const UserManager: React.FC<UserManagerProps> = ({
   usersList,
   setUsersList,
-  activeSession,
-  setActiveSession,
   operatorSessionLimit,
   setOperatorSessionLimit,
   setOperatorSessionRemaining,
@@ -107,45 +103,6 @@ export const UserManager: React.FC<UserManagerProps> = ({
         >
           <UserPlus className="w-4 h-4" /> Tambah User Baru
         </button>
-      </div>
-
-      {/* Single Active Session Lock Panel */}
-      <div className="p-4 bg-sky-50/90 rounded-2xl border border-sky-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-sky-600" />
-            <h4 className="text-xs font-bold text-sky-900">
-              Status Kunci Sesi Tunggal (Single Active Session Lock)
-            </h4>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${activeSession ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : 'bg-slate-100 text-slate-500'}`}>
-              {activeSession ? '🟢 1 SESI AKTIF' : '⚪ BEBAS / SIAP'}
-            </span>
-          </div>
-          <p className="text-[11.5px] text-sky-800 leading-relaxed">
-            {activeSession ? (
-              <>
-                Sesi aktif oleh: <strong>{activeSession.name}</strong> (<code>{activeSession.email}</code>) — Terhubung sejak {activeSession.loginTime}. Pengguna lain diblokir dari login untuk mencegah konflik data kendali hardware.
-              </>
-            ) : (
-              'Sistem dalam keadaan bebas. Belum ada pengguna lain yang mengunci sesi.'
-            )}
-          </p>
-        </div>
-
-        {activeSession && (
-          <button
-            onClick={() => {
-              try {
-                localStorage.removeItem('fluidhe_active_session');
-              } catch (e) { }
-              setActiveSession(null);
-              alert('✅ Kunci sesi berhasil diakhiri! Pengguna lain sekarang dapat melakukan login.');
-            }}
-            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition whitespace-nowrap cursor-pointer"
-          >
-            ⚠️ Akhiri / Reset Sesi Aktif
-          </button>
-        )}
       </div>
 
       {/* Admin Setting: Session Limit for Operators */}
