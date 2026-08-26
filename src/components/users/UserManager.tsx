@@ -183,7 +183,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {usersList.map((u) => (
-              <tr key={u.id} className="hover:bg-slate-50/80 transition">
+              <tr key={`${u.id}-${u.email}`} className="hover:bg-slate-50/80 transition">
                 <td className="p-3 font-mono font-bold text-slate-600">{u.id}</td>
                 <td className="p-3 font-bold text-slate-900">{u.name}</td>
                 <td className="p-3 text-slate-600">{u.email}</td>

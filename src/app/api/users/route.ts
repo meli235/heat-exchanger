@@ -52,6 +52,19 @@ function readDatabase() {
     if (!parsed.passwords) {
       parsed.passwords = DEFAULT_DATA.passwords;
     }
+
+    // Auto-fix duplicate IDs
+    const seenIds = new Set<string>();
+    let counter = 1;
+    parsed.users = parsed.users.map((u: UserItem) => {
+      if (!u.id || seenIds.has(u.id)) {
+        u.id = `USR-${String(counter).padStart(2, '0')}`;
+      }
+      seenIds.add(u.id);
+      counter++;
+      return u;
+    });
+
     return parsed;
   } catch (err) {
     console.error('[Users API] Error reading database:', err);
@@ -97,8 +110,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: `Email ${cleanEmail} sudah terdaftar!` }, { status: 400 });
     }
 
+    // Generate guaranteed unique ID
+    let maxNum = 0;
+    db.users.forEach((u: UserItem) => {
+      const match = u.id?.match(/\d+/);
+      if (match) {
+        const n = parseInt(match[0], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const nextId = `USR-${String(maxNum + 1).padStart(2, '0')}`;
+
     const newUser: UserItem = {
-      id: `USR-0${db.users.length + 1}`,
+      id: nextId,
       name: name.trim(),
       email: cleanEmail,
       role: role || 'operator',
