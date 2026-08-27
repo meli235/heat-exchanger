@@ -384,6 +384,40 @@ export default function FluidHEDashboard() {
     }
   }, [activeTab]);
 
+  // Real-time active user presence heartbeat
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser?.email) return;
+
+    const pingPresence = () => {
+      fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: currentUser.email, lastSeen: Date.now() })
+      }).catch(() => {});
+    };
+
+    pingPresence();
+    const interval = setInterval(pingPresence, 5000);
+
+    const handleBeforeUnload = () => {
+      if (currentUser?.email) {
+        fetch('/api/users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: currentUser.email, lastSeen: 0 }),
+          keepalive: true
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isLoggedIn, currentUser?.email]);
+
   // Real-time schedule enforcement: If admin changed schedule while operator is active
   useEffect(() => {
     if (!isLoggedIn || !currentUser || currentUser.role !== 'operator') return;
@@ -402,7 +436,7 @@ export default function FluidHEDashboard() {
     return () => clearInterval(interval);
   }, [isLoggedIn, currentUser, usersList]);
 
-  // Schedule Access Validation Helper Function (Validation for Date Range, Days of Week, & Operational Hours)
+  // Schedule Access Validation Helper Function (Validation for Date Range & Operational Hours)
   const validateScheduleAccess = (user: UserItem): { allowed: boolean; reason?: string } => {
     if (!user.isScheduleRestricted || user.role === 'admin') {
       return { allowed: true };
@@ -419,23 +453,7 @@ export default function FluidHEDashboard() {
       return { allowed: false, reason: `Masa izin praktikum Anda telah berakhir pada ${user.allowedEndDate}.` };
     }
 
-    // 2. Validasi Hari Akses (Day of Week Check: Minggu, Senin, Selasa, Rabu, Kamis, Jumat, Sabtu)
-    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const currentDayName = dayNames[now.getDay()];
-
-    if (user.allowedDays && Array.isArray(user.allowedDays) && user.allowedDays.length > 0) {
-      const isAllowedDay = user.allowedDays.some(
-        (d) => d.toLowerCase().trim() === currentDayName.toLowerCase().trim()
-      );
-      if (!isAllowedDay) {
-        return {
-          allowed: false,
-          reason: `Hari ini (${currentDayName}) Anda tidak memiliki izin akses praktikum. Hari yang diizinkan Admin: ${user.allowedDays.join(', ')}.`
-        };
-      }
-    }
-
-    // 3. Validasi Jam Operasional (Operational Hours Check)
+    // 2. Validasi Jam Operasional (Operational Hours Check)
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const [startH, startM] = (user.allowedStartTime || '07:00').split(':').map(Number);
@@ -1546,21 +1564,19 @@ export default function FluidHEDashboard() {
     const inputEmail = loginEmail.toLowerCase().trim();
     const inputPass = (loginPassword || '').trim();
 
-    // ─── AKSES DEVELOPER SEMENTARA (Ketik "1" atau "anugrahtriplecycle@gmail.com" tanpa sandi) ───
+    // ─── AKSES DEVELOPER SEMENTARA (Ketik "1" untuk Admin, Ketik "2" untuk Caca) ───
     if (inputEmail === '1' || (inputEmail === 'anugrahtriplecycle@gmail.com' && inputPass === '')) {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      const lastLoginText = `Hari ini, ${timeStr}`;
+      const nowIso = new Date().toISOString();
 
       setUsersList((prev) =>
-        prev.map((u) => (u.email.toLowerCase() === 'anugrahtriplecycle@gmail.com' ? { ...u, lastLogin: lastLoginText } : u))
+        prev.map((u) => (u.email.toLowerCase() === 'anugrahtriplecycle@gmail.com' ? { ...u, lastLogin: nowIso } : u))
       );
 
       try {
         fetch('/api/users', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'anugrahtriplecycle@gmail.com', lastLogin: lastLoginText })
+          body: JSON.stringify({ email: 'anugrahtriplecycle@gmail.com', lastLogin: nowIso, lastSeen: Date.now() })
         }).catch(() => {});
       } catch (e) {}
 
@@ -1569,6 +1585,32 @@ export default function FluidHEDashboard() {
         email: 'anugrahtriplecycle@gmail.com',
         role: 'admin'
       });
+      setIsLoggedIn(true);
+      setActiveTab('dashboard');
+      return;
+    }
+
+    if (inputEmail === '2' || inputEmail === 'caca' || (inputEmail === 'dwimeliantiistiqomah55@gmail.com' && inputPass === '')) {
+      const nowIso = new Date().toISOString();
+
+      setUsersList((prev) =>
+        prev.map((u) => (u.email.toLowerCase() === 'dwimeliantiistiqomah55@gmail.com' ? { ...u, lastLogin: nowIso } : u))
+      );
+
+      try {
+        fetch('/api/users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'dwimeliantiistiqomah55@gmail.com', lastLogin: nowIso, lastSeen: Date.now() })
+        }).catch(() => {});
+      } catch (e) {}
+
+      setCurrentUser({
+        name: 'caca',
+        email: 'dwimeliantiistiqomah55@gmail.com',
+        role: 'operator'
+      });
+      setOperatorSessionRemaining(operatorSessionLimit * 60);
       setIsLoggedIn(true);
       setActiveTab('dashboard');
       return;
@@ -1627,20 +1669,18 @@ export default function FluidHEDashboard() {
       }
     }
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    const lastLoginText = `Hari ini, ${timeStr}`;
+    const nowIso = new Date().toISOString();
 
     // Update lastLogin locally and to central server database
     setUsersList((prev) =>
-      prev.map((u) => (u.email.toLowerCase() === email ? { ...u, lastLogin: lastLoginText } : u))
+      prev.map((u) => (u.email.toLowerCase() === email ? { ...u, lastLogin: nowIso } : u))
     );
 
     try {
       const patchRes = await fetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, lastLogin: lastLoginText })
+        body: JSON.stringify({ email: email, lastLogin: nowIso })
       });
       const patchData = await patchRes.json();
       if (patchData.success && Array.isArray(patchData.users)) {
@@ -1678,6 +1718,13 @@ export default function FluidHEDashboard() {
   };
 
   const handleLogout = () => {
+    if (currentUser?.email) {
+      fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: currentUser.email, lastSeen: 0 })
+      }).catch(() => {});
+    }
     setIsLoggedIn(false);
   };
 

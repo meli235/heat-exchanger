@@ -77,6 +77,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
       ) : (
         <div className="asklepios-card p-6 bg-white space-y-6">
           <UserManager
+            currentUser={currentUser}
             usersList={usersList}
             setUsersList={setUsersList}
             operatorSessionLimit={operatorSessionLimit}

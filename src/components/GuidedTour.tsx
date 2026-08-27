@@ -16,7 +16,6 @@ import {
   Server,
   Layers,
   Compass,
-  Target,
   Bell
 } from 'lucide-react';
 
@@ -468,7 +467,7 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
         />
       </svg>
 
-      {/* ─── HIGHLIGHT BORDER & TARGET INDICATOR OVER THE FEATURE ─── */}
+      {/* ─── HIGHLIGHT BORDER OVER THE FEATURE ─── */}
       {targetRect && !isCompleted && (
         <div
           className="absolute transition-all duration-300 ease-out rounded-2xl pointer-events-none z-20 ring-4 ring-sky-400/90 shadow-[0_0_35px_rgba(56,189,248,0.75)]"
@@ -481,12 +480,6 @@ export default function GuidedTour({ isOpen, onClose, activeTab, setActiveTab }:
         >
           {/* Animated pulsing highlight border */}
           <div className="absolute inset-0 rounded-2xl border-2 border-white/90 animate-pulse" />
-          
-          {/* Glowing Target Pointer Badge */}
-          <div className="absolute -top-3.5 left-4 px-2.5 py-0.5 bg-gradient-to-r from-sky-600 via-indigo-600 to-blue-600 text-white text-[9.5px] font-black rounded-full shadow-xl uppercase tracking-wider flex items-center gap-1.5 ring-2 ring-white/90">
-            <Target className="w-3 h-3 text-amber-300 animate-spin" />
-            <span>Target Fitur</span>
-          </div>
         </div>
       )}
 

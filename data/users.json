@@ -6,7 +6,7 @@
       "email": "anugrahtriplecycle@gmail.com",
       "role": "admin",
       "status": "Active",
-      "lastLogin": "Hari ini, 16.08",
+      "lastLogin": "2026-08-27T05:49:39.453Z",
       "isScheduleRestricted": true,
       "allowedStartDate": "2026-08-26",
       "allowedEndDate": "2026-08-26",
@@ -18,7 +18,8 @@
         "Jumat"
       ],
       "allowedStartTime": "07:00",
-      "allowedEndTime": "18:00"
+      "allowedEndTime": "18:00",
+      "lastSeen": 1787814351300
     },
     {
       "id": "USR-02",
@@ -26,16 +27,18 @@
       "email": "dwimeliantiistiqomah55@gmail.com",
       "role": "operator",
       "status": "Active",
-      "lastLogin": "Hari ini, 16.09",
+      "lastLogin": "2026-08-27T06:43:33.504Z",
       "isScheduleRestricted": true,
       "allowedStartDate": "2026-08-26",
-      "allowedEndDate": "2026-08-26",
+      "allowedEndDate": "2026-08-27",
       "allowedDays": [
         "Minggu",
-        "Kamis"
+        "Kamis",
+        "Jumat"
       ],
       "allowedStartTime": "07:00",
-      "allowedEndTime": "18:00"
+      "allowedEndTime": "18:00",
+      "lastSeen": 1787814389269
     }
   ],
   "passwords": {

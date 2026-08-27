@@ -77,9 +77,14 @@ function writeDatabase(data: { users: UserItem[]; passwords: Record<string, stri
 // GET: Ambil daftar seluruh user & password publik sistem
 export async function GET() {
   const db = readDatabase();
+  const now = Date.now();
+  const usersWithOnlineStatus = db.users.map((u: UserItem) => ({
+    ...u,
+    isOnline: !!(u.lastSeen && now - u.lastSeen < 15000)
+  }));
   return NextResponse.json({
     success: true,
-    users: db.users,
+    users: usersWithOnlineStatus,
     passwords: db.passwords
   });
 }
@@ -162,7 +167,8 @@ export async function PATCH(req: Request) {
       allowedEndTime,
       allowedDays,
       status,
-      lastLogin
+      lastLogin,
+      lastSeen
     } = body;
 
     const db = readDatabase();
@@ -184,6 +190,7 @@ export async function PATCH(req: Request) {
       if (Array.isArray(allowedDays)) targetUser.allowedDays = allowedDays;
       if (status) targetUser.status = status;
       if (lastLogin) targetUser.lastLogin = lastLogin;
+      if (lastSeen !== undefined) targetUser.lastSeen = lastSeen;
     }
 
     if (email && newPassword) {
@@ -193,9 +200,15 @@ export async function PATCH(req: Request) {
 
     writeDatabase(db);
 
+    const now = Date.now();
+    const usersWithOnlineStatus = db.users.map((u: UserItem) => ({
+      ...u,
+      isOnline: !!(u.lastSeen && now - u.lastSeen < 15000)
+    }));
+
     return NextResponse.json({
       success: true,
-      users: db.users,
+      users: usersWithOnlineStatus,
       passwords: db.passwords
     });
   } catch (err: any) {

@@ -9,6 +9,8 @@ export interface UserItem {
   role: UserRole;
   status: 'Active' | 'Inactive';
   lastLogin: string;
+  isOnline?: boolean;
+  lastSeen?: number;
   isScheduleRestricted?: boolean;
   allowedStartDate?: string; // YYYY-MM-DD
   allowedEndDate?: string;   // YYYY-MM-DD

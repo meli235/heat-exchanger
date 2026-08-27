@@ -20,8 +20,10 @@ import {
   X
 } from 'lucide-react';
 import { UserItem, UserRole } from '@/types';
+import { formatLastLogin } from '@/lib/dateFormatter';
 
 export interface UserManagerProps {
+  currentUser?: { name: string; email: string; role: UserRole };
   usersList: UserItem[];
   setUsersList: (users: UserItem[]) => void;
   operatorSessionLimit: number;
@@ -52,6 +54,7 @@ export interface UserManagerProps {
 }
 
 export const UserManager: React.FC<UserManagerProps> = ({
+  currentUser,
   usersList,
   setUsersList,
   operatorSessionLimit,
@@ -85,7 +88,6 @@ export const UserManager: React.FC<UserManagerProps> = ({
   const [editEndDate, setEditEndDate] = React.useState<string>('');
   const [editStartTime, setEditStartTime] = React.useState<string>('07:00');
   const [editEndTime, setEditEndTime] = React.useState<string>('18:00');
-  const [editDays, setEditDays] = React.useState<string[]>(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']);
   const [isSavingEdit, setIsSavingEdit] = React.useState<boolean>(false);
   return (
     <div className="space-y-6">
@@ -144,50 +146,57 @@ export const UserManager: React.FC<UserManagerProps> = ({
               <th className="p-3">Email UAD</th>
               <th className="p-3">Role / Hak Akses</th>
               <th className="p-3">Jadwal & Tanggal Akses Login</th>
-              <th className="p-3">Status</th>
               <th className="p-3">Login Terakhir</th>
               <th className="p-3">Aksi (Kontrol Admin)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {usersList.map((u) => (
-              <tr key={`${u.id}-${u.email}`} className="hover:bg-slate-50/80 transition">
-                <td className="p-3 font-mono font-bold text-slate-600">{u.id}</td>
-                <td className="p-3 font-bold text-slate-900">{u.name}</td>
-                <td className="p-3 text-slate-600">{u.email}</td>
-                <td className="p-3">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin'
-                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                    }`}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="p-3">
-                  {u.isScheduleRestricted ? (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="px-2.5 py-0.5 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 w-fit">
-                        <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
-                        {u.allowedStartDate} s.d. {u.allowedEndDate}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1 pl-0.5">
-                        <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" /> Jam {u.allowedStartTime || '07:00'} - {u.allowedEndTime || '18:00'} WIB
-                      </span>
+            {usersList.map((u) => {
+              const isOnline = (currentUser && currentUser.email.toLowerCase() === u.email.toLowerCase()) || !!u.isOnline || (!!u.lastSeen && Date.now() - u.lastSeen < 15000);
+              return (
+                <tr key={`${u.id}-${u.email}`} className="hover:bg-slate-50/80 transition">
+                  <td className="p-3 font-mono font-bold text-slate-600">{u.id}</td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      {isOnline ? (
+                        <span className="relative flex h-2.5 w-2.5 shrink-0" title="Online (Sedang Membuka Aplikasi)">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-300 shrink-0" title="Offline (Tidak Membuka Aplikasi)"></span>
+                      )}
+                      <span className="font-bold text-slate-900">{u.name}</span>
                     </div>
-                  ) : (
-                    <span className="px-2.5 py-1 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-slate-500" />
-                      24/7 Akses Bebas
+                  </td>
+                  <td className="p-3 text-slate-600">{u.email}</td>
+                  <td className="p-3">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${u.role === 'admin'
+                      ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                      : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      }`}>
+                      {u.role}
                     </span>
-                  )}
-                </td>
-                <td className="p-3">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                    {u.status}
-                  </span>
-                </td>
-                <td className="p-3 text-slate-500">{u.lastLogin}</td>
+                  </td>
+                  <td className="p-3">
+                    {u.isScheduleRestricted ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="px-2.5 py-0.5 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 w-fit">
+                          <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
+                          {u.allowedStartDate} s.d. {u.allowedEndDate}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1 pl-0.5">
+                          <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" /> Jam {u.allowedStartTime || '07:00'} - {u.allowedEndTime || '18:00'} WIB
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="px-2.5 py-1 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-slate-500" />
+                        24/7 Akses Bebas
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 text-slate-500">{formatLastLogin(u.lastLogin)}</td>
                 <td className="p-3">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
@@ -208,7 +217,6 @@ export const UserManager: React.FC<UserManagerProps> = ({
                         setEditEndDate(u.allowedEndDate || today);
                         setEditStartTime(u.allowedStartTime || '07:00');
                         setEditEndTime(u.allowedEndTime || '18:00');
-                        setEditDays(u.allowedDays && u.allowedDays.length > 0 ? u.allowedDays : ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']);
                       }}
                       className="p-1 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
                       title="Edit Pengguna & Jadwal Akses"
@@ -225,7 +233,8 @@ export const UserManager: React.FC<UserManagerProps> = ({
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+          })}
           </tbody>
         </table>
       </div>
@@ -472,8 +481,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
                       allowedStartDate: editStartDate,
                       allowedEndDate: editEndDate,
                       allowedStartTime: editStartTime,
-                      allowedEndTime: editEndTime,
-                      allowedDays: editDays
+                      allowedEndTime: editEndTime
                     })
                   });
                   const data = await res.json();
@@ -491,8 +499,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
                               allowedStartDate: editStartDate,
                               allowedEndDate: editEndDate,
                               allowedStartTime: editStartTime,
-                              allowedEndTime: editEndTime,
-                              allowedDays: editDays
+                              allowedEndTime: editEndTime
                             }
                           : x
                       )
@@ -537,7 +544,7 @@ export const UserManager: React.FC<UserManagerProps> = ({
                   <div>
                     <span className="text-xs font-bold text-slate-800 block">Batasi Jadwal Akses Lab</span>
                     <span className="text-[10.5px] text-slate-500">
-                      {editRestricted ? 'Akses dibatasi sesuai tanggal, hari, dan jam tertentu' : 'Pengguna memiliki akses bebas 24/7 tanpa batas waktu'}
+                      {editRestricted ? 'Akses dibatasi sesuai tanggal dan jam tertentu' : 'Pengguna memiliki akses bebas 24/7 tanpa batas waktu'}
                     </span>
                   </div>
                   <input
@@ -573,36 +580,6 @@ export const UserManager: React.FC<UserManagerProps> = ({
                           onChange={(e) => setEditEndDate(e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 font-medium"
                         />
-                      </div>
-                    </div>
-
-                    {/* Hari yang Diizinkan */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Hari Akses yang Diizinkan:</label>
-                      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
-                        {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].map((day) => {
-                          const isSelected = editDays.includes(day);
-                          return (
-                            <button
-                              type="button"
-                              key={day}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setEditDays(editDays.filter((d) => d !== day));
-                                } else {
-                                  setEditDays([...editDays, day]);
-                                }
-                              }}
-                              className={`py-1.5 px-1 text-[10.5px] font-bold rounded-lg border transition cursor-pointer ${
-                                isSelected
-                                  ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
-                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                              }`}
-                            >
-                              {day.slice(0, 3)}
-                            </button>
-                          );
-                        })}
                       </div>
                     </div>
 
